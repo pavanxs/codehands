@@ -1,12 +1,8 @@
-# Relay client package
+# Relay client
 
-Tunnel integration utilities for hosted mode.
+Reserved for a future authenticated relay between the local bearer-protected
+agent and an MCP-compatible OAuth gateway.
 
-Design is tunnel-agnostic — CodeHands just serves HTTP; any tunnel can expose
-the port. This package provides:
-- Tunnel health checks
-- Connection status utilities
-- Documentation/guides for setting up Tailscale Funnel (recommended),
-  Cloudflare Tunnel, ngrok, etc.
-
-Auth for hosted mode is v2.
+The current placeholder does not provide authentication, tunnelling, or remote
+access. Documentation must not present it—or a generic public tunnel—as a
+security boundary.

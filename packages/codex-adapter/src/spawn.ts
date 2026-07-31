@@ -23,6 +23,7 @@ export class ExecServerManager extends EventEmitter {
   private sessionId: string | null = null;
   private restartCount = 0;
   private stopped = false;
+  private restartTimer: NodeJS.Timeout | null = null;
   private codexBinary: string;
   private listenMode: string;
 
@@ -40,6 +41,10 @@ export class ExecServerManager extends EventEmitter {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
     this.cleanup();
   }
 
@@ -145,6 +150,7 @@ export class ExecServerManager extends EventEmitter {
   }
 
   private handleCrash(code: number | null, signal: string | null): void {
+    if (this.stopped || this.restartTimer) return;
     this.cleanup();
 
     if (this.restartCount >= MAX_RESTART_ATTEMPTS) {
@@ -157,10 +163,16 @@ export class ExecServerManager extends EventEmitter {
     this.restartCount++;
     this.emit("restarting", this.restartCount, MAX_RESTART_ATTEMPTS);
 
-    setTimeout(() => {
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
       if (this.stopped) return;
       this.spawnAndInit().catch((err) => {
-        this.emit("failed", err);
+        if (this.restartCount >= MAX_RESTART_ATTEMPTS) {
+          this.cleanup();
+          this.emit("failed", err);
+        } else {
+          this.handleCrash(null, null);
+        }
       });
     }, RESTART_DELAY_MS);
   }

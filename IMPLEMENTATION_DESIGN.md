@@ -64,7 +64,7 @@ It will not parse terminal text or reimplement Codex internals.
 | packages/mcp-tools | MCP tool schemas mirroring all exec-server operations (fs/readFile, fs/writeFile, process/start, etc.). |
 | packages/protocol | Versioned shared schemas and types. |
 | packages/audit | Redacted audit events. |
-| packages/relay-client | Tunnel integration utilities (Tailscale Funnel recommended). |
+| packages/relay-client | Future authenticated relay to an MCP-compatible OAuth gateway; no direct public tunnels. |
 | vendor/codex | Untouched OpenAI Codex upstream Git submodule. |
 | configs | Example configuration, never credentials. |
 | docs | Architecture, threat model, contracts, compatibility, decisions. |

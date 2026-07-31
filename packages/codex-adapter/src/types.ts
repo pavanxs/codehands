@@ -1,5 +1,85 @@
 export type ProcessId = string;
 
+export interface FileSystemSandboxEntry {
+  path:
+    | { type: "path"; path: string }
+    | { type: "glob_pattern"; pattern: string }
+    | { type: "special"; value: { kind: "root" | "minimal" | "project_roots" | "tmpdir" | "slash_tmp"; subpath?: string } };
+  access: "read" | "write" | "deny";
+  missing_path_behavior?: "error" | "skip";
+}
+
+export interface FileSystemSandboxContext {
+  permissions: {
+    type: "managed";
+    file_system: {
+      type: "restricted";
+      entries: FileSystemSandboxEntry[];
+      glob_scan_max_depth?: number;
+    };
+    network: "restricted" | "enabled";
+  };
+  cwd: string;
+  workspaceRoots: string[];
+  windowsSandboxLevel: "disabled" | "restricted-token" | "elevated";
+  windowsSandboxPrivateDesktop?: boolean;
+  useLegacyLandlock?: boolean;
+}
+
+export function createWorkspaceSandbox(
+  workspaceUri: string,
+  options: { network?: "restricted" | "enabled"; readOnly?: boolean } = {},
+): FileSystemSandboxContext {
+  const entries: FileSystemSandboxEntry[] = [
+    {
+      path: { type: "special", value: { kind: "minimal" } },
+      access: "read",
+    },
+    {
+      path: { type: "special", value: { kind: "project_roots" } },
+      access: options.readOnly ? "read" : "write",
+    },
+    {
+      path: { type: "special", value: { kind: "tmpdir" } },
+      access: "write",
+    },
+    {
+      path: { type: "special", value: { kind: "slash_tmp" } },
+      access: "write",
+      missing_path_behavior: "skip",
+    },
+  ];
+  if (process.platform === "darwin") {
+    for (const runtimePath of [
+      "file:///System/Library/OpenSSL",
+      "file:///Library/Developer",
+      "file:///Applications/Xcode.app",
+    ]) {
+      entries.push({
+        path: { type: "path", path: runtimePath },
+        access: "read",
+        missing_path_behavior: "skip",
+      });
+    }
+  }
+
+  return {
+    permissions: {
+      type: "managed",
+      file_system: {
+        type: "restricted",
+        entries,
+      },
+      network: options.network ?? "restricted",
+    },
+    cwd: workspaceUri,
+    workspaceRoots: [workspaceUri],
+    windowsSandboxLevel: "restricted-token",
+    windowsSandboxPrivateDesktop: false,
+    useLegacyLandlock: false,
+  };
+}
+
 export interface InitializeParams {
   clientName: string;
   resumeSessionId?: string;
@@ -16,6 +96,8 @@ export interface ExecParams {
   env?: Record<string, string>;
   tty?: boolean;
   pipeStdin?: boolean;
+  sandbox: FileSystemSandboxContext;
+  enforceManagedNetwork?: boolean;
 }
 
 export interface ExecResponse {
@@ -73,6 +155,7 @@ export interface TerminateResponse {
 
 export interface FsReadFileParams {
   path: string;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsReadFileResponse {
@@ -82,6 +165,7 @@ export interface FsReadFileResponse {
 export interface FsWriteFileParams {
   path: string;
   dataBase64: string;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsWriteFileResponse {}
@@ -89,12 +173,14 @@ export interface FsWriteFileResponse {}
 export interface FsCreateDirectoryParams {
   path: string;
   recursive?: boolean;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsCreateDirectoryResponse {}
 
 export interface FsGetMetadataParams {
   path: string;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsGetMetadataResponse {
@@ -114,6 +200,7 @@ export interface FsReadDirectoryEntry {
 
 export interface FsReadDirectoryParams {
   path: string;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsReadDirectoryResponse {
@@ -122,13 +209,27 @@ export interface FsReadDirectoryResponse {
 
 export interface FsWalkParams {
   path: string;
-  options: Record<string, unknown>;
+  options: {
+    maxDepth: number;
+    maxDirectories: number;
+    maxEntries: number;
+    followDirectorySymlinks: boolean;
+    pruneHiddenDirectories?: boolean;
+  };
+  sandbox: FileSystemSandboxContext;
+}
+
+export interface FsWalkResponse {
+  entries: Array<{ path: string; kind: "directory" | "file" }>;
+  errors: Array<{ path: string; message: string }>;
+  truncated: boolean;
 }
 
 export interface FsRemoveParams {
   path: string;
   recursive?: boolean;
   force?: boolean;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsRemoveResponse {}
@@ -137,6 +238,7 @@ export interface FsCopyParams {
   sourcePath: string;
   destinationPath: string;
   recursive: boolean;
+  sandbox: FileSystemSandboxContext;
 }
 
 export interface FsCopyResponse {}

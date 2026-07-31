@@ -5,6 +5,7 @@ export interface ToolDefinition {
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
+    openWorldHint?: boolean;
   };
 }
 
@@ -17,8 +18,54 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         path: { type: "string", description: "Absolute or workspace-relative file path" },
+        startLine: { type: "integer", minimum: 1, description: "Optional first line to return (1-based)" },
+        endLine: { type: "integer", minimum: 1, description: "Optional last line to return (inclusive)" },
       },
       required: ["path"],
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "fs_replaceText",
+    description: "Replace exact text in a file. Fails safely if the expected old text is absent or ambiguous.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute or workspace-relative file path" },
+        oldText: { type: "string", description: "Exact existing text to replace" },
+        newText: { type: "string", description: "Replacement text" },
+        replaceAll: { type: "boolean", description: "Replace every match instead of requiring exactly one", default: false },
+      },
+      required: ["path", "oldText", "newText"],
+    },
+    annotations: { destructiveHint: true },
+  },
+  {
+    name: "fs_applyPatch",
+    description: "Apply unified-diff hunks to one file with context verification. The path is supplied separately and patch headers are ignored.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Target file path" },
+        patch: { type: "string", description: "Unified diff containing one or more @@ hunks" },
+      },
+      required: ["path", "patch"],
+    },
+    annotations: { destructiveHint: true },
+  },
+  {
+    name: "fs_searchText",
+    description: "Search for text or a regular expression inside the active workspace. Returns matching paths, line numbers, and lines.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Text or regular expression to search for" },
+        path: { type: "string", description: "Optional workspace-relative directory or file", default: "." },
+        glob: { type: "string", description: "Optional file glob such as *.ts" },
+        fixedStrings: { type: "boolean", description: "Treat query as literal text", default: false },
+        maxResults: { type: "integer", minimum: 1, maximum: 500, default: 100 },
+      },
+      required: ["query"],
     },
     annotations: { readOnlyHint: true },
   },
@@ -115,11 +162,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   // --- Process ---
   {
     name: "process_start",
-    description: "Start a terminal command. Returns a process ID to read output or send input later.",
+    description: "Start an executable directly without shell interpretation. Put every argument in args. Returns a session-owned process ID.",
     inputSchema: {
       type: "object",
       properties: {
-        command: { type: "string", description: "The command to run (e.g. 'npm test')" },
+        command: { type: "string", description: "Executable name or path (for example npm, with test in args)" },
         args: {
           type: "array",
           items: { type: "string" },
@@ -196,7 +243,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   // --- HTTP ---
   {
     name: "http_request",
-    description: "Make an HTTP request from the local machine. Like curl.",
+    description: "Make an HTTP request allowed by the configured host, method, protocol, and private-network policy. Disabled by default.",
     inputSchema: {
       type: "object",
       properties: {
@@ -212,6 +259,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["method", "url"],
     },
+    annotations: { destructiveHint: true, openWorldHint: true },
   },
 
   // --- Workspace ---
@@ -234,5 +282,38 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
       required: ["workspace"],
     },
+  },
+  {
+    name: "git_status",
+    description: "Return concise Git working-tree and branch status for the active workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "git_diff",
+    description: "Return a non-colored Git diff for the active workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        staged: { type: "boolean", description: "Show staged changes", default: false },
+        path: { type: "string", description: "Optional workspace-relative path to limit the diff" },
+        base: { type: "string", description: "Optional trusted Git revision to diff against" },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "activity_recent",
+    description: "Show recent sanitized CodeHands tool activity for this MCP session, including durations and failures.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 20 },
+      },
+    },
+    annotations: { readOnlyHint: true },
   },
 ];

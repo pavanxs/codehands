@@ -74,6 +74,9 @@ doesn't allow slashes in tool names).
 | --- | --- | --- |
 | fs_readFile | fs/readFile | Read a file |
 | fs_writeFile | fs/writeFile | Write a file |
+| fs_replaceText | CodeHands composition | Exact conflict-safe replacement |
+| fs_applyPatch | CodeHands composition | Context-verified unified patch |
+| fs_searchText | Sandboxed process | Search workspace text |
 | fs_createDirectory | fs/createDirectory | Create a directory |
 | fs_readDirectory | fs/readDirectory | List directory contents |
 | fs_walk | fs/walk | Walk directory tree |
@@ -88,9 +91,12 @@ doesn't allow slashes in tool names).
 | http_request | http/request | Fetch a URL |
 | workspace_list | (CodeHands) | List approved workspaces |
 | workspace_set | (CodeHands) | Set active workspace for session |
+| git_status | Sandboxed process | Read Git status |
+| git_diff | Sandboxed process | Read Git diff |
+| activity_recent | (CodeHands) | Read sanitized session activity |
 
-16 tools total. CodeHands converts `_` back to `/` when forwarding to
-exec-server.
+22 tools total. Direct exec-server operations use the pinned JSON-RPC contract;
+composed tools still perform their file/process work through that boundary.
 
 ---
 
@@ -108,25 +114,24 @@ handles simple read/write/run operations without those problems.
   multiple simultaneous AI chats. ~1-3ms latency.
 - **Local (stdio adapter):** Thin wrapper for clients that only support stdio
   (e.g., Claude Desktop today). Connects to the HTTP core internally.
-- **Hosted (tunnel-agnostic):** Server's HTTP port exposed via any tunnel
-  (Tailscale Funnel, Cloudflare, ngrok). Default recommendation: Tailscale
-  with Funnel (free, private, no domain needed). Auth required for hosted
-  mode (v2).
-
-Design is tunnel-agnostic: our server doesn't care what tunnel sits in front.
+- **Remote:** Requires an MCP-compatible OAuth gateway. Direct public tunnels
+  are explicitly unsupported; they provide reachability, not application
+  authentication.
 
 ---
 
 ## 8. Security Model
 
-- **Blocked commands list:** Rejects obviously dangerous operations (rm -rf /,
-  format C:, etc.). Configurable.
-- **Workspace validation:** Only approved folders (from config) can be accessed.
-- **Codex exec-server sandbox:** Trusted for file system isolation and process
-  sandboxing.
-- **No max file size limit:** Trust exec-server to handle this.
-- **Auth:** v2 (for hosted mode). Not needed for local stdio mode.
-- **Rate limiting:** v2.
+- **HTTP:** Authenticated loopback by default, with host/origin, rate, body,
+  and session limits.
+- **Workspace validation:** Canonical symlink-safe paths must remain in the
+  current session's active workspace.
+- **Codex exec-server sandbox:** A permission context is mandatory and
+  unsandboxed process responses fail closed.
+- **Commands:** Direct argv, no implicit shell, protected environment.
+- **Outbound HTTP:** Disabled by default and subject to protocol, method, host,
+  DNS, and private-address policy.
+- **Audit:** Recursive secret redaction and per-session recent activity.
 
 ---
 

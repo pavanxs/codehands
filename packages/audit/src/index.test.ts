@@ -36,6 +36,10 @@ describe("AuditLogger", () => {
     expect(entry.tool).toBe("fs_readFile");
     expect(entry.success).toBe(true);
     expect(entry.durationMs).toBe(12);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(TEST_DIR).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(path.join(TEST_DIR, files[0])).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("does nothing when disabled", async () => {
@@ -97,5 +101,29 @@ describe("AuditLogger", () => {
     const entry = JSON.parse(content.trim());
     expect(entry.success).toBe(false);
     expect(entry.error).toContain("blocked");
+  });
+
+  it("recursively redacts secrets and exposes sanitized recent activity", async () => {
+    const logger = new AuditLogger({ logDir: TEST_DIR });
+    logger.log({
+      timestamp: "2025-01-01T00:00:00.000Z",
+      sessionId: "sess-private",
+      tool: "http_request",
+      params: {
+        headers: { Authorization: "Bearer secret" },
+        env: { API_TOKEN: "secret" },
+        args: ["--token", "secret"],
+      },
+      durationMs: 3,
+      success: true,
+      resultSummary: "authorization: Bearer secret",
+    });
+
+    const recent = logger.recent("sess-private", 1);
+    expect(recent[0]?.params.headers).toBe("[redacted]");
+    expect(recent[0]?.params.env).toBe("[redacted]");
+    expect(recent[0]?.params.args).toEqual(["--token", "[redacted]"]);
+    expect(recent[0]?.resultSummary).not.toContain("Bearer secret");
+    await logger.close();
   });
 });
