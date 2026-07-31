@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { CodexAdapter } from "@codehands/codex-adapter";
 import { AuditLogger } from "@codehands/audit";
 import { loadConfig, initConfig, getConfigPath, addWorkspace, type CodehandsConfig } from "./config.js";
@@ -12,6 +13,64 @@ import { createServer } from "./server.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
+
+function parseTunnelFlag(): string | null {
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--tunnel" || args[i] === "--t") {
+      return args[i + 1] ?? null;
+    }
+  }
+  return null;
+}
+
+function startTailscaleFunnel(port: number): ChildProcess | null {
+  try {
+    execSync("tailscale version", { stdio: "ignore" });
+  } catch {
+    console.error("Error: tailscale is not installed or not in PATH.");
+    console.error("Install from: https://tailscale.com/download");
+    return null;
+  }
+
+  console.log(`Starting Tailscale Funnel on port ${port}...`);
+  const child = spawn("tailscale", ["funnel", String(port)], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  child.stdout?.on("data", (data: Buffer) => {
+    const output = data.toString().trim();
+    if (output) console.log(`[tailscale] ${output}`);
+  });
+
+  child.stderr?.on("data", (data: Buffer) => {
+    const output = data.toString().trim();
+    if (output) console.log(`[tailscale] ${output}`);
+  });
+
+  child.on("error", (err) => {
+    console.error(`Tailscale Funnel error: ${err.message}`);
+  });
+
+  child.on("exit", (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`Tailscale Funnel exited with code ${code}`);
+    }
+  });
+
+  try {
+    const statusRaw = execSync("tailscale status --json", { encoding: "utf-8" });
+    const status = JSON.parse(statusRaw);
+    const dnsName = status.Self?.DNSName?.replace(/\.$/, "");
+    if (dnsName) {
+      console.log(`Public MCP endpoint: https://${dnsName}/`);
+      console.log(`Use this URL in ChatGPT/Claude.ai MCP settings.`);
+    }
+  } catch {
+    console.log("(Could not determine public URL — check tailscale status)");
+  }
+
+  return child;
+}
 
 async function runStart() {
   const config = loadConfig();
@@ -71,14 +130,27 @@ async function runStart() {
     res.end("Not found");
   });
 
+  let tunnelProcess: ChildProcess | null = null;
+
   httpServer.listen(config.port, () => {
     console.log(`CodeHands MCP server running on http://localhost:${config.port}/mcp`);
     console.log(`Health check: http://localhost:${config.port}/health`);
     console.log(`Workspaces: ${config.workspaces.length > 0 ? config.workspaces.join(", ") : "(none)"}`);
+
+    const tunnelProvider = parseTunnelFlag();
+    if (tunnelProvider === "tailscale") {
+      tunnelProcess = startTailscaleFunnel(config.port);
+    } else if (tunnelProvider) {
+      console.error(`Unknown tunnel provider: "${tunnelProvider}". Supported: tailscale`);
+    }
   });
 
-  process.on("SIGINT", async () => {
+  const shutdown = async () => {
     console.log("\nShutting down...");
+    if (tunnelProcess) {
+      tunnelProcess.kill();
+      tunnelProcess = null;
+    }
     for (const [sid, t] of transports) {
       await t.close();
       transports.delete(sid);
@@ -86,17 +158,10 @@ async function runStart() {
     await adapter.stop();
     httpServer.close();
     process.exit(0);
-  });
+  };
 
-  process.on("SIGTERM", async () => {
-    for (const [sid, t] of transports) {
-      await t.close();
-      transports.delete(sid);
-    }
-    await adapter.stop();
-    httpServer.close();
-    process.exit(0);
-  });
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 async function handlePost(
@@ -234,10 +299,11 @@ async function main() {
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
       console.log("Usage:");
-      console.log("  codehands start    Start the HTTP MCP server");
-      console.log("  codehands stdio    Run in stdio mode (for Claude Desktop)");
-      console.log("  codehands init     Create default config file");
-      console.log("  codehands add <path>  Add a workspace to config");
+      console.log("  codehands start                  Start the HTTP MCP server");
+      console.log("  codehands start --tunnel tailscale  Start with Tailscale Funnel");
+      console.log("  codehands stdio                  Run in stdio mode (for Claude Desktop)");
+      console.log("  codehands init                   Create default config file");
+      console.log("  codehands add <path>             Add a workspace to config");
       console.log("");
       console.log(`Config: ${getConfigPath()}`);
       break;
