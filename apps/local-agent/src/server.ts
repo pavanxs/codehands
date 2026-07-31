@@ -13,12 +13,18 @@ export interface SessionState {
   activeWorkspace: string | null;
 }
 
+let globalWorkspace: string | null = null;
+
 export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger) {
   const validator = new WorkspaceValidator(config.workspaces);
   const blockedCmds = new BlockedCommands({ extraPatterns: config.blockedCommands });
   const audit = logger ?? new AuditLogger({ enabled: false });
 
-  const sessionState: SessionState = { activeWorkspace: null };
+  if (globalWorkspace === null && config.workspaces.length === 1) {
+    globalWorkspace = validator.getWorkspaces()[0] ?? null;
+  }
+
+  const sessionState: SessionState = { activeWorkspace: globalWorkspace };
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
@@ -81,6 +87,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
       const result = await handler((params ?? {}) as Record<string, unknown>, ctx);
       if (name === "workspace_set" && !result.isError) {
         sessionState.activeWorkspace = ctx.activeWorkspace;
+        globalWorkspace = ctx.activeWorkspace;
       }
       const errorText = result.isError ? result.content[0]?.text : undefined;
       audit.log({
