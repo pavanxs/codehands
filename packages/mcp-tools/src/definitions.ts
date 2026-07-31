@@ -258,4 +258,26 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     annotations: { readOnlyHint: true },
   },
+  {
+    name: "batch",
+    description: "Execute multiple tool calls in a single request. All calls run in parallel and results are returned together. Use this to avoid round-trip overhead when you need multiple independent operations (e.g., reading several files, or reading files while starting a process).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        calls: {
+          type: "array",
+          description: "Array of tool calls to execute in parallel",
+          items: {
+            type: "object",
+            properties: {
+              tool: { type: "string", description: "Tool name (e.g., fs_readFile, process_start)" },
+              args: { type: "object", description: "Arguments for the tool (same as calling it directly)" },
+            },
+            required: ["tool", "args"],
+          },
+        },
+      },
+      required: ["calls"],
+    },
+  },
 ];

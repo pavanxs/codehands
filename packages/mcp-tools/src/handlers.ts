@@ -18,6 +18,7 @@ export interface ToolContext {
   resolvePath: (relativePath: string) => string;
   ownedProcesses: Map<string, ProcessInfo>;
   sessionId: string;
+  checkBlocked?: (command: string, args?: string[]) => string | null;
 }
 
 export interface ToolResult {
@@ -283,6 +284,47 @@ const handlers: Record<string, HandlerFn> = {
       sessionId: info.sessionId,
     }));
     return textResult({ processes, total: processes.length, currentSession: ctx.sessionId });
+  },
+
+  async batch(params, ctx) {
+    const calls = params["calls"] as Array<{ tool: string; args: Record<string, unknown> }>;
+    if (!calls || !Array.isArray(calls) || calls.length === 0) {
+      return errorResult("batch requires a non-empty 'calls' array");
+    }
+    if (calls.length > 20) {
+      return errorResult("batch limited to 20 calls per request");
+    }
+
+    const results = await Promise.all(
+      calls.map(async (call, index) => {
+        const handler = handlers[call.tool];
+        if (!handler) {
+          return { index, tool: call.tool, success: false, error: `Unknown tool: ${call.tool}` };
+        }
+        if (call.tool === "batch") {
+          return { index, tool: call.tool, success: false, error: "Cannot nest batch calls" };
+        }
+        if (call.tool === "process_start" && ctx.checkBlocked) {
+          const cmd = (call.args?.command as string) ?? "";
+          const cmdArgs = (call.args?.args as string[]) ?? [];
+          const blocked = ctx.checkBlocked(cmd, cmdArgs);
+          if (blocked) {
+            return { index, tool: call.tool, success: false, error: blocked };
+          }
+        }
+        try {
+          const result = await handler(call.args ?? {}, ctx);
+          const text = result.content[0]?.text ?? "";
+          let data: unknown;
+          try { data = JSON.parse(text); } catch { data = text; }
+          return { index, tool: call.tool, success: !result.isError, data };
+        } catch (err) {
+          return { index, tool: call.tool, success: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      })
+    );
+
+    return textResult({ results, total: results.length });
   },
 };
 

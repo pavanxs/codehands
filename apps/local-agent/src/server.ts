@@ -17,7 +17,11 @@ export interface SessionState {
 let globalWorkspace: string | null = null;
 const globalProcesses: Map<string, ProcessInfo> = new Map();
 
-export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger, sessionId?: string) {
+export interface ServerFeatures {
+  batch?: boolean;
+}
+
+export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger, sessionId?: string, features?: ServerFeatures) {
   const validator = new WorkspaceValidator(config.workspaces);
   const blockedCmds = new BlockedCommands({ extraPatterns: config.blockedCommands });
   const audit = logger ?? new AuditLogger({ enabled: false });
@@ -25,6 +29,9 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
   if (globalWorkspace === null && config.workspaces.length === 1) {
     globalWorkspace = validator.getWorkspaces()[0] ?? null;
   }
+
+  const hiddenTools = new Set<string>();
+  if (!features?.batch) hiddenTools.add("batch");
 
   const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: globalProcesses };
 
@@ -35,14 +42,16 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: TOOL_DEFINITIONS.map((def) => ({
-        name: def.name,
-        description: def.description,
-        inputSchema: {
-          type: "object" as const,
-          ...def.inputSchema,
-        },
-      })),
+      tools: TOOL_DEFINITIONS
+        .filter((def) => !hiddenTools.has(def.name))
+        .map((def) => ({
+          name: def.name,
+          description: def.description,
+          inputSchema: {
+            type: "object" as const,
+            ...def.inputSchema,
+          },
+        })),
     };
   });
 
@@ -63,6 +72,11 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
         }
         return check.resolvedPath;
       },
+      checkBlocked: (command: string, cmdArgs?: string[]) => {
+        const argv = normalizeArgv(command, cmdArgs ?? []);
+        const result = blockedCmds.isBlocked(argv);
+        return result.blocked ? result.reason! : null;
+      },
     };
 
     if (name === "process_start" && params) {
@@ -76,6 +90,13 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
           isError: true,
         } as const;
       }
+    }
+
+    if (hiddenTools.has(name)) {
+      return {
+        content: [{ type: "text", text: `Tool "${name}" is not enabled. Start with --batch flag to enable it.` }],
+        isError: true,
+      } as const;
     }
 
     const handler = getHandler(name);

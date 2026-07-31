@@ -25,6 +25,10 @@ function parseTunnelFlag(): string | null {
   return null;
 }
 
+function hasBatchFlag(): boolean {
+  return args.includes("--batch");
+}
+
 function startTailscaleFunnel(port: number): ChildProcess | null {
   try {
     execSync("tailscale version", { stdio: "ignore" });
@@ -156,6 +160,7 @@ async function runStart() {
     console.log(`CodeHands MCP server running on http://localhost:${config.port}/mcp`);
     console.log(`Health check: http://localhost:${config.port}/health`);
     console.log(`Workspaces: ${config.workspaces.length > 0 ? config.workspaces.join(", ") : "(none)"}`);
+    if (hasBatchFlag()) console.log(`Batch tool: enabled`);
 
     const tunnelProvider = parseTunnelFlag();
     if (tunnelProvider === "tailscale") {
@@ -217,7 +222,8 @@ async function handlePost(
       if (sid) transports.delete(sid);
     };
 
-    const { server } = createServer(config, adapter, logger, newSessionId);
+    const features = { batch: hasBatchFlag() };
+    const { server } = createServer(config, adapter, logger, newSessionId, features);
     await server.connect(transport);
     await transport.handleRequest(req, res, parsed);
     return;
@@ -273,7 +279,8 @@ async function runStdio() {
   const adapter = new CodexAdapter({ codexBinary: config.codexBinary });
   await adapter.start();
 
-  const { server } = createServer(config, adapter);
+  const features = { batch: hasBatchFlag() };
+  const { server } = createServer(config, adapter, undefined, undefined, features);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
@@ -439,13 +446,19 @@ async function main() {
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
       console.log("Usage:");
-      console.log("  codehands start                  Start the HTTP MCP server");
+      console.log("  codehands start                     Start the HTTP MCP server");
+      console.log("  codehands start --batch             Start with batch tool enabled");
       console.log("  codehands start --tunnel tailscale  Start with Tailscale Funnel");
-      console.log("  codehands stdio                  Run in stdio mode (for Claude Desktop)");
-      console.log("  codehands init                   Create default config file");
-      console.log("  codehands add <path>             Add a workspace to config");
-      console.log("  codehands config                 Open config in editor");
-      console.log("  codehands doctor                 Check system health");
+      console.log("  codehands stdio                     Run in stdio mode (for Claude/ChatGPT Desktop)");
+      console.log("  codehands stdio --batch             Stdio mode with batch tool");
+      console.log("  codehands init                      Create default config file");
+      console.log("  codehands add <path>                Add a workspace to config");
+      console.log("  codehands config                    Open config in editor");
+      console.log("  codehands doctor                    Check system health");
+      console.log("");
+      console.log("Flags:");
+      console.log("  --batch                Enable batch tool (run multiple tools in one call)");
+      console.log("  --tunnel <provider>    Start tunnel (tailscale)");
       console.log("");
       console.log(`Config: ${getConfigPath()}`);
       break;
