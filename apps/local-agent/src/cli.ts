@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
+import * as net from "node:net";
 import { randomUUID } from "node:crypto";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -324,6 +325,96 @@ function runConfig() {
   spawn(cmd, cmdArgs, { detached: true, stdio: "ignore" }).unref();
 }
 
+async function runDoctor() {
+  let issues = 0;
+
+  const ok = (msg: string) => console.log(`  [OK] ${msg}`);
+  const fail = (msg: string) => { console.log(`  [!!] ${msg}`); issues++; };
+  const warn = (msg: string) => console.log(`  [--] ${msg}`);
+
+  console.log("CodeHands Doctor");
+  console.log("================\n");
+
+  // Check config file
+  console.log("Config:");
+  const configPath = getConfigPath();
+  if (fs.existsSync(configPath)) {
+    ok(`Found: ${configPath}`);
+    try {
+      const config = loadConfig();
+      ok(`Valid JSON, ${config.workspaces.length} workspace(s) configured`);
+
+      // Check workspaces exist
+      for (const ws of config.workspaces) {
+        if (fs.existsSync(ws)) {
+          ok(`Workspace exists: ${ws}`);
+        } else {
+          fail(`Workspace NOT found: ${ws}`);
+        }
+      }
+      if (config.workspaces.length === 0) {
+        warn("No workspaces configured yet. Run: codehands add <path>");
+      }
+    } catch (e) {
+      fail(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  } else {
+    fail(`Config not found. Run: codehands init`);
+  }
+
+  // Check Codex exec-server
+  console.log("\nExec-server:");
+  try {
+    const version = execSync("codex --version", { encoding: "utf-8", timeout: 5000 }).trim();
+    ok(`codex found: ${version}`);
+  } catch {
+    fail("codex binary not found in PATH. Run: npm install -g @openai/codex");
+  }
+
+  // Check port
+  console.log("\nNetwork:");
+  try {
+    const cfg = loadConfig();
+    const portInUse = await new Promise<boolean>((resolve) => {
+      const tester = net.createServer();
+      tester.once("error", () => resolve(true));
+      tester.once("listening", () => { tester.close(); resolve(false); });
+      tester.listen(cfg.port);
+    });
+    if (portInUse) {
+      ok(`Port ${cfg.port} is in use (server likely running)`);
+    } else {
+      ok(`Port ${cfg.port} is free (server not running)`);
+    }
+  } catch {
+    warn("Could not check port");
+  }
+
+  // Check Tailscale
+  console.log("\nTailscale (optional):");
+  try {
+    execSync("tailscale version", { stdio: "ignore", timeout: 5000 });
+    ok("tailscale installed");
+    try {
+      const status = execSync("tailscale status --json", { encoding: "utf-8", timeout: 5000 });
+      const parsed = JSON.parse(status);
+      const dnsName = parsed.Self?.DNSName?.replace(/\.$/, "");
+      if (dnsName) ok(`DNS: ${dnsName}`);
+    } catch {
+      warn("tailscale not connected");
+    }
+  } catch {
+    warn("tailscale not installed (only needed for --tunnel)");
+  }
+
+  // Check Node.js version
+  console.log("\nRuntime:");
+  ok(`Node.js ${process.version}`);
+  ok(`Platform: ${process.platform} ${process.arch}`);
+
+  console.log(`\n${issues === 0 ? "All checks passed." : `${issues} issue(s) found.`}`);
+}
+
 async function main() {
   switch (command) {
     case "start":
@@ -341,6 +432,9 @@ async function main() {
     case "config":
       runConfig();
       break;
+    case "doctor":
+      await runDoctor();
+      break;
     default:
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
@@ -351,6 +445,7 @@ async function main() {
       console.log("  codehands init                   Create default config file");
       console.log("  codehands add <path>             Add a workspace to config");
       console.log("  codehands config                 Open config in editor");
+      console.log("  codehands doctor                 Check system health");
       console.log("");
       console.log(`Config: ${getConfigPath()}`);
       break;
