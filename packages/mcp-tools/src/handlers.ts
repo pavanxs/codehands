@@ -3,12 +3,19 @@ import { pathToFileURL } from "node:url";
 import * as os from "node:os";
 import type { CodexAdapter } from "@codehands/codex-adapter";
 
+export interface ProcessInfo {
+  command: string;
+  startedAt: string;
+  exited: boolean;
+  exitCode?: number;
+}
+
 export interface ToolContext {
   adapter: CodexAdapter;
   activeWorkspace: string | null;
   workspaces: string[];
   resolvePath: (relativePath: string) => string;
-  ownedProcesses: Set<string>;
+  ownedProcesses: Map<string, ProcessInfo>;
 }
 
 export interface ToolResult {
@@ -125,8 +132,13 @@ const handlers: Record<string, HandlerFn> = {
     }
 
     const env = { ...baseEnv, ...customEnv };
+    const fullCommandStr = args.length > 0 ? [command, ...args].join(" ") : command;
     const result = await ctx.adapter.processStart({ argv, cwd: toFileUri(cwd), env, tty });
-    ctx.ownedProcesses.add(result.processId);
+    ctx.ownedProcesses.set(result.processId, {
+      command: fullCommandStr,
+      startedAt: new Date().toISOString(),
+      exited: false,
+    });
     return textResult({ processId: result.processId, started: true });
   },
 
@@ -142,6 +154,14 @@ const handlers: Record<string, HandlerFn> = {
     const output = result.chunks
       .map((c) => Buffer.from(c.chunk, "base64").toString("utf-8"))
       .join("");
+
+    if (result.exited || result.closed) {
+      const info = ctx.ownedProcesses.get(processId);
+      if (info) {
+        info.exited = true;
+        info.exitCode = result.exitCode;
+      }
+    }
 
     return textResult({
       processId,
@@ -170,7 +190,8 @@ const handlers: Record<string, HandlerFn> = {
       return errorResult(`Process "${processId}" does not belong to this session`);
     }
     const result = await ctx.adapter.processTerminate({ processId });
-    ctx.ownedProcesses.delete(processId);
+    const info = ctx.ownedProcesses.get(processId);
+    if (info) { info.exited = true; }
     return textResult({ processId, wasRunning: result.running });
   },
 
@@ -247,6 +268,17 @@ const handlers: Record<string, HandlerFn> = {
     const ms = Math.max(0, Math.min(30_000, (params["ms"] as number) ?? 1000));
     await new Promise((resolve) => setTimeout(resolve, ms));
     return textResult({ waited: ms });
+  },
+
+  async process_list(_params, ctx) {
+    const processes = Array.from(ctx.ownedProcesses.entries()).map(([id, info]) => ({
+      processId: id,
+      command: info.command,
+      startedAt: info.startedAt,
+      status: info.exited ? "exited" : "running",
+      exitCode: info.exitCode,
+    }));
+    return textResult({ processes, total: processes.length });
   },
 };
 

@@ -249,4 +249,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     annotations: { readOnlyHint: true },
   },
+  {
+    name: "process_list",
+    description: "List all processes started by this session. Shows which are still running and which have exited.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    annotations: { readOnlyHint: true },
+  },
 ];

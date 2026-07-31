@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { TOOL_DEFINITIONS } from "./definitions.js";
 
 describe("TOOL_DEFINITIONS", () => {
-  it("has exactly 17 tools", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(17);
+  it("has exactly 18 tools", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(18);
   });
 
   it("all names use only allowed MCP characters [A-Za-z0-9_-.]", () => {
@@ -27,7 +27,7 @@ describe("TOOL_DEFINITIONS", () => {
   it("contains the expected tool categories", () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(names.filter((n) => n.startsWith("fs_"))).toHaveLength(8);
-    expect(names.filter((n) => n.startsWith("process_"))).toHaveLength(5);
+    expect(names.filter((n) => n.startsWith("process_"))).toHaveLength(6);
     expect(names.filter((n) => n.startsWith("http_"))).toHaveLength(1);
     expect(names.filter((n) => n.startsWith("workspace_"))).toHaveLength(2);
   });

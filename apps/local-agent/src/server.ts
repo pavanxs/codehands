@@ -4,14 +4,14 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { CodexAdapter } from "@codehands/codex-adapter";
-import { TOOL_DEFINITIONS, getHandler, type ToolContext } from "@codehands/mcp-tools";
+import { TOOL_DEFINITIONS, getHandler, type ToolContext, type ProcessInfo } from "@codehands/mcp-tools";
 import { WorkspaceValidator, BlockedCommands, normalizeArgv } from "@codehands/policy-engine";
 import { AuditLogger } from "@codehands/audit";
 import type { CodehandsConfig } from "./config.js";
 
 export interface SessionState {
   activeWorkspace: string | null;
-  ownedProcesses: Set<string>;
+  ownedProcesses: Map<string, ProcessInfo>;
 }
 
 let globalWorkspace: string | null = null;
@@ -25,7 +25,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
     globalWorkspace = validator.getWorkspaces()[0] ?? null;
   }
 
-  const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: new Set() };
+  const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: new Map() };
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
