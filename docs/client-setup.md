@@ -63,12 +63,20 @@ $headers = @{
 
 ## ChatGPT web and other cloud MCP clients
 
-Do not expose CodeHands directly through Tailscale Funnel, ngrok, or
-Cloudflare Tunnel. Cloud MCP clients generally require an OAuth-compatible
-remote MCP server; CodeHands currently provides a local bearer-protected
-endpoint, not an OAuth authorization server.
+For temporary, single-user testing, enable `capabilityPath` and expose the
+loopback server through an HTTPS tunnel as described in
+[hosted-gateway.md](hosted-gateway.md). ChatGPT receives a URL shaped like:
 
-See [hosted-gateway.md](hosted-gateway.md) for the required gateway design.
+```text
+https://machine.tail1234.ts.net/<random-256-bit-capability>/mcp
+```
+
+The full URL is a credential. Do not paste it into a chat, commit it, include
+it in screenshots, or reuse it after accidental disclosure. The ordinary
+`/mcp` route remains bearer-protected.
+
+Cloud MCP client requirements vary. Use an OAuth gateway for shared,
+multi-user, or production access.
 
 ## First tool calls
 

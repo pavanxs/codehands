@@ -40,8 +40,10 @@ Claude Desktop). The adapter connects internally to the HTTP server.
 - **Local (HTTP on localhost):** Primary mode. Multiple AI chats connect to one
   server. ~1-3ms latency overhead.
 - **Local (stdio adapter):** For stdio-only clients. Wraps HTTP core internally.
-- **Remote:** Requires a separately reviewed MCP-compatible OAuth gateway.
-  Direct public tunnels are not supported.
+- **Remote personal testing:** A separately generated 256-bit capability path
+  may be exposed through an HTTPS tunnel for one trusted user.
+- **Remote shared/production:** Requires a separately reviewed MCP-compatible
+  OAuth gateway.
 
 ## Components
 

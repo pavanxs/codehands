@@ -9,9 +9,10 @@ Tool names and result schemas are provider-neutral.
 
 ## Browser-hosted clients
 
-ChatGPT and Claude web cannot reach localhost. Do not solve that by exposing
-the local agent directly through a public tunnel. A supported deployment needs
-the OAuth/PKCE gateway described in `hosted-gateway.md`.
+ChatGPT and Claude web cannot reach localhost. For temporary single-user
+testing, expose the local agent only through the capability URL described in
+`hosted-gateway.md`. A shared or production deployment needs the OAuth/PKCE
+gateway described there.
 
 Provider-specific authorization and connection instructions belong in the
 gateway and documentation, not the policy/tool core.

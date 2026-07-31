@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { CodehandsConfig } from "./config.js";
+import { isValidCapabilityToken, type CodehandsConfig } from "./config.js";
 
 export class FixedWindowRateLimiter {
   private readonly counters = new Map<string, { count: number; resetAt: number }>();
@@ -31,6 +31,7 @@ export function authorizeHttpRequest(
   req: IncomingMessage,
   config: CodehandsConfig,
   limiter: FixedWindowRateLimiter,
+  authentication: "bearer" | "capability" = "bearer",
 ): { allowed: true } | { allowed: false; status: number; message: string } {
   const remoteAddress = req.socket.remoteAddress ?? "unknown";
   if (!limiter.allow(remoteAddress)) {
@@ -47,7 +48,7 @@ export function authorizeHttpRequest(
     return { allowed: false, status: 403, message: "Origin is not allowed" };
   }
 
-  if (config.auth.enabled) {
+  if (authentication === "bearer" && config.auth.enabled) {
     const authorization = req.headers.authorization;
     if (!config.authToken || !authorization?.startsWith("Bearer ")) {
       return { allowed: false, status: 401, message: "Bearer authentication required" };
@@ -58,6 +59,11 @@ export function authorizeHttpRequest(
   }
 
   return { allowed: true };
+}
+
+export function isCapabilityPath(pathname: string, config: CodehandsConfig): boolean {
+  if (!config.capabilityPath.enabled || !isValidCapabilityToken(config.capabilityToken)) return false;
+  return safeEqual(pathname, `/${config.capabilityToken}/mcp`);
 }
 
 export function sendHttpError(res: ServerResponse, status: number, message: string): void {

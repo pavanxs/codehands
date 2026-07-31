@@ -9,8 +9,8 @@ operations to the pinned Codex executor; and returns structured results.
 
 ## Security status
 
-CodeHands is pre-1.0 software. Local testing is supported. Directly publishing
-the MCP endpoint to the internet is not.
+CodeHands is pre-1.0 software. Local testing is supported. A narrowly scoped
+capability URL is available for temporary, single-user remote testing.
 
 - HTTP binds to `127.0.0.1` and requires a bearer token by default.
 - Every file and process request includes a workspace sandbox. Startup fails if
@@ -26,8 +26,10 @@ the MCP endpoint to the internet is not.
 - Tool calls are written to a recursively redacted JSONL audit log.
 
 Tailscale Funnel, ngrok, and Cloudflare Tunnel make a local service reachable
-from the public internet. A tunnel is not application authentication. Use an
-MCP-compatible OAuth gateway before exposing CodeHands remotely.
+from the public internet. A tunnel is not application authentication. For
+single-user testing, CodeHands can put a 256-bit random capability in the MCP
+path. The unguessable path is then the credential. Multi-user or production
+deployments still require an MCP-compatible OAuth gateway.
 
 See [SECURITY.md](SECURITY.md) and [docs/threat-model.md](docs/threat-model.md).
 
@@ -91,6 +93,7 @@ missing sandbox support.
 
 - `~/.codehands/config.json`, mode `0600`
 - `~/.codehands/http-token`, a random bearer token, mode `0600`
+- `~/.codehands/capability-token`, a separate random URL credential, mode `0600`
 
 Example:
 
@@ -104,6 +107,10 @@ Example:
   "auth": {
     "enabled": true,
     "tokenEnv": "CODEHANDS_AUTH_TOKEN"
+  },
+  "capabilityPath": {
+    "enabled": false,
+    "tokenEnv": "CODEHANDS_CAPABILITY_TOKEN"
   },
   "allowedHosts": [
     "localhost",
@@ -143,9 +150,16 @@ codehands doctor    Verify config, exec-server compatibility, and sandboxing
 codehands start     Start authenticated Streamable HTTP on loopback
 codehands stdio     Run as a stdio MCP server
 codehands logs -f   Follow sanitized tool activity
+codehands capability-url <host>  Print the secret HTTPS MCP URL
+codehands rotate-capability      Replace a disclosed capability token
 ```
 
 Run `codehands doctor` before connecting a client.
+
+The capability URL is intended only for personal testing. It does not disable
+bearer authentication on `/mcp`, and the capability token is deliberately
+different from the local bearer token. Treat the full generated URL like a
+password.
 
 ## Tools
 

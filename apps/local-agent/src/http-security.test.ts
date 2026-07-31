@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EventEmitter } from "node:events";
-import { authorizeHttpRequest, FixedWindowRateLimiter } from "./http-security.js";
+import { authorizeHttpRequest, FixedWindowRateLimiter, isCapabilityPath } from "./http-security.js";
 import type { CodehandsConfig } from "./config.js";
 
 const CONFIG: CodehandsConfig = {
@@ -9,6 +9,8 @@ const CONFIG: CodehandsConfig = {
   host: "127.0.0.1",
   auth: { enabled: true, tokenEnv: "CODEHANDS_AUTH_TOKEN" },
   authToken: "correct-token",
+  capabilityPath: { enabled: true, tokenEnv: "CODEHANDS_CAPABILITY_TOKEN" },
+  capabilityToken: "1234567890123456789012345678901234567890123",
   allowedHosts: ["localhost"],
   allowedOrigins: ["https://chatgpt.com"],
   maxRequestBytes: 1024,
@@ -32,6 +34,29 @@ describe("HTTP MCP security", () => {
     expect(authorizeHttpRequest(request() as never, CONFIG, limiter).allowed).toBe(false);
     expect(authorizeHttpRequest(request({ authorization: "Bearer wrong" }) as never, CONFIG, limiter).allowed).toBe(false);
     expect(authorizeHttpRequest(request({ authorization: "Bearer correct-token" }) as never, CONFIG, limiter).allowed).toBe(true);
+  });
+
+  it("matches only the exact configured capability path", () => {
+    expect(isCapabilityPath(`/${CONFIG.capabilityToken}/mcp`, CONFIG)).toBe(true);
+    expect(isCapabilityPath(`/${CONFIG.capabilityToken}/mcp/`, CONFIG)).toBe(false);
+    expect(isCapabilityPath("/wrong/mcp", CONFIG)).toBe(false);
+    expect(isCapabilityPath("/mcp", CONFIG)).toBe(false);
+    expect(isCapabilityPath("/short/mcp", {
+      ...CONFIG,
+      capabilityToken: "short",
+    })).toBe(false);
+  });
+
+  it("uses the capability path instead of bearer auth without bypassing host and origin checks", () => {
+    const limiter = new FixedWindowRateLimiter(10);
+    expect(authorizeHttpRequest(request() as never, CONFIG, limiter, "capability").allowed).toBe(true);
+    expect(authorizeHttpRequest(request({ host: "evil.example" }) as never, CONFIG, limiter, "capability").allowed).toBe(false);
+    expect(authorizeHttpRequest(
+      request({ origin: "https://evil.example" }) as never,
+      CONFIG,
+      limiter,
+      "capability",
+    ).allowed).toBe(false);
   });
 
   it("rejects unapproved hosts and origins", () => {

@@ -13,6 +13,11 @@ export interface CodehandsConfig {
     tokenEnv: string;
   };
   authToken?: string;
+  capabilityPath: {
+    enabled: boolean;
+    tokenEnv: string;
+  };
+  capabilityToken?: string;
   allowedHosts: string[];
   allowedOrigins: string[];
   maxRequestBytes: number;
@@ -33,6 +38,10 @@ const DEFAULT_CONFIG: CodehandsConfig = {
   auth: {
     enabled: true,
     tokenEnv: "CODEHANDS_AUTH_TOKEN",
+  },
+  capabilityPath: {
+    enabled: false,
+    tokenEnv: "CODEHANDS_CAPABILITY_TOKEN",
   },
   allowedHosts: ["localhost", "127.0.0.1", "::1"],
   allowedOrigins: [],
@@ -58,6 +67,10 @@ function getTokenPath(): string {
   return path.join(getConfigDir(), "http-token");
 }
 
+function getCapabilityTokenPath(): string {
+  return path.join(getConfigDir(), "capability-token");
+}
+
 export function loadConfig(): CodehandsConfig {
   const configPath = getConfigPath();
 
@@ -68,7 +81,12 @@ export function loadConfig(): CodehandsConfig {
     ...DEFAULT_CONFIG.auth,
     ...(parsed.auth ?? {}),
   };
+  const capabilityPath = {
+    ...DEFAULT_CONFIG.capabilityPath,
+    ...(parsed.capabilityPath ?? {}),
+  };
   const authToken = process.env[auth.tokenEnv] ?? readTokenFile();
+  const capabilityToken = process.env[capabilityPath.tokenEnv] ?? readCapabilityTokenFile();
 
   return {
     workspaces: parsed.workspaces ?? [],
@@ -76,6 +94,8 @@ export function loadConfig(): CodehandsConfig {
     host: parsed.host ?? DEFAULT_CONFIG.host,
     auth,
     authToken,
+    capabilityPath,
+    capabilityToken,
     allowedHosts: parsed.allowedHosts ?? DEFAULT_CONFIG.allowedHosts,
     allowedOrigins: parsed.allowedOrigins ?? DEFAULT_CONFIG.allowedOrigins,
     maxRequestBytes: parsed.maxRequestBytes ?? DEFAULT_CONFIG.maxRequestBytes,
@@ -97,6 +117,7 @@ export function initConfig(): string {
   if (fs.existsSync(configPath)) {
     fs.chmodSync(configPath, 0o600);
     ensureTokenFile();
+    ensureCapabilityTokenFile();
     return configPath;
   }
 
@@ -123,6 +144,7 @@ export function initConfig(): string {
   fs.writeFileSync(configPath, JSON.stringify(defaultContent, null, 2) + "\n", "utf-8");
   fs.chmodSync(configPath, 0o600);
   ensureTokenFile();
+  ensureCapabilityTokenFile();
   return configPath;
 }
 
@@ -144,4 +166,43 @@ function readTokenFile(): string | undefined {
   return token || undefined;
 }
 
-export { getConfigPath, getTokenPath, ensureTokenFile };
+function ensureCapabilityTokenFile(): string {
+  const tokenPath = getCapabilityTokenPath();
+  if (!fs.existsSync(getConfigDir())) fs.mkdirSync(getConfigDir(), { recursive: true, mode: 0o700 });
+  fs.chmodSync(getConfigDir(), 0o700);
+  if (!fs.existsSync(tokenPath)) {
+    fs.writeFileSync(tokenPath, randomBytes(32).toString("base64url") + "\n", { mode: 0o600 });
+  }
+  fs.chmodSync(tokenPath, 0o600);
+  return tokenPath;
+}
+
+function rotateCapabilityTokenFile(): string {
+  const tokenPath = getCapabilityTokenPath();
+  if (!fs.existsSync(getConfigDir())) fs.mkdirSync(getConfigDir(), { recursive: true, mode: 0o700 });
+  fs.chmodSync(getConfigDir(), 0o700);
+  fs.writeFileSync(tokenPath, randomBytes(32).toString("base64url") + "\n", { mode: 0o600 });
+  fs.chmodSync(tokenPath, 0o600);
+  return tokenPath;
+}
+
+function readCapabilityTokenFile(): string | undefined {
+  const tokenPath = getCapabilityTokenPath();
+  if (!fs.existsSync(tokenPath)) return undefined;
+  const token = fs.readFileSync(tokenPath, "utf-8").trim();
+  return token || undefined;
+}
+
+function isValidCapabilityToken(token: string | undefined): token is string {
+  return Boolean(token && token.length >= 43 && /^[A-Za-z0-9_-]+$/.test(token));
+}
+
+export {
+  getConfigPath,
+  getTokenPath,
+  getCapabilityTokenPath,
+  ensureTokenFile,
+  ensureCapabilityTokenFile,
+  rotateCapabilityTokenFile,
+  isValidCapabilityToken,
+};

@@ -10,9 +10,25 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { CodexAdapter, createWorkspaceSandbox } from "@codehands/codex-adapter";
 import { AuditLogger } from "@codehands/audit";
-import { loadConfig, initConfig, getConfigPath, getTokenPath, ensureTokenFile, type CodehandsConfig } from "./config.js";
+import {
+  loadConfig,
+  initConfig,
+  getConfigPath,
+  getTokenPath,
+  getCapabilityTokenPath,
+  ensureTokenFile,
+  ensureCapabilityTokenFile,
+  rotateCapabilityTokenFile,
+  isValidCapabilityToken,
+  type CodehandsConfig,
+} from "./config.js";
 import { createServer } from "./server.js";
-import { authorizeHttpRequest, FixedWindowRateLimiter, sendHttpError } from "./http-security.js";
+import {
+  authorizeHttpRequest,
+  FixedWindowRateLimiter,
+  isCapabilityPath,
+  sendHttpError,
+} from "./http-security.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -23,6 +39,11 @@ async function runStart() {
     ensureTokenFile();
     config = loadConfig();
   }
+  if (config.capabilityPath.enabled && !config.capabilityToken) {
+    ensureCapabilityTokenFile();
+    config = loadConfig();
+  }
+  assertCapabilityToken(config);
 
   if (config.workspaces.length === 0) {
     console.log(`⚠  No workspaces configured.`);
@@ -71,8 +92,14 @@ async function runStart() {
         return;
       }
 
-      if (url.pathname === "/mcp") {
-        const authorization = authorizeHttpRequest(req, config, limiter);
+      const capabilityRequest = isCapabilityPath(url.pathname, config);
+      if (url.pathname === "/mcp" || capabilityRequest) {
+        const authorization = authorizeHttpRequest(
+          req,
+          config,
+          limiter,
+          capabilityRequest ? "capability" : "bearer",
+        );
         if (!authorization.allowed) {
           sendHttpError(res, authorization.status, authorization.message);
           return;
@@ -117,6 +144,11 @@ async function runStart() {
     console.log(`CodeHands MCP server running on http://${config.host}:${config.port}/mcp`);
     console.log(`Health check: http://${config.host}:${config.port}/health`);
     console.log(`HTTP authentication: ${config.auth.enabled ? `enabled (token: ${getTokenPath()})` : "DISABLED"}`);
+    console.log(`Capability URL authentication: ${
+      config.capabilityPath.enabled
+        ? `enabled (token: ${getCapabilityTokenPath()})`
+        : "disabled"
+    }`);
     console.log(`Workspaces: ${config.workspaces.length > 0 ? config.workspaces.join(", ") : "(none)"}`);
   });
 
@@ -289,6 +321,7 @@ async function runInit() {
   console.log(`Config created at: ${configPath}`);
   console.log(`Edit this file to add your workspaces.`);
   console.log(`HTTP bearer token created at: ${getTokenPath()}`);
+  console.log(`Capability URL token created at: ${getCapabilityTokenPath()}`);
 }
 
 async function runLogs() {
@@ -331,6 +364,15 @@ async function runDoctor() {
   }
   if (config.auth.enabled && !config.authToken) {
     problems.push(`HTTP authentication is enabled but no token exists at ${getTokenPath()} or ${config.auth.tokenEnv}`);
+  }
+  if (config.capabilityPath.enabled) {
+    if (!config.capabilityToken) {
+      problems.push(
+        `Capability URL authentication is enabled but no token exists at ${getCapabilityTokenPath()} or ${config.capabilityPath.tokenEnv}`,
+      );
+    } else if (!isValidCapabilityToken(config.capabilityToken)) {
+      problems.push("Capability URL token must be at least 43 URL-safe characters");
+    }
   }
 
   const adapter = new CodexAdapter({ codexBinary: config.codexBinary });
@@ -382,6 +424,46 @@ async function verifySandbox(adapter: CodexAdapter, workspace: string): Promise<
   return result.sandboxType!;
 }
 
+function assertCapabilityToken(config: CodehandsConfig): void {
+  if (!config.capabilityPath.enabled) return;
+  if (!config.capabilityToken) {
+    throw new Error("Capability URL authentication is enabled but its token is missing");
+  }
+  if (!isValidCapabilityToken(config.capabilityToken)) {
+    throw new Error("Capability URL token must be at least 43 URL-safe characters");
+  }
+}
+
+function runCapabilityUrl() {
+  const config = loadConfig();
+  assertCapabilityToken(config);
+  if (!config.capabilityPath.enabled) {
+    throw new Error(`Capability URL authentication is disabled in ${getConfigPath()}`);
+  }
+
+  const input = args[1];
+  if (!input) {
+    throw new Error("Provide the Funnel hostname, for example: codehands capability-url machine.tail1234.ts.net");
+  }
+  const origin = new URL(input.includes("://") ? input : `https://${input}`);
+  if (origin.protocol !== "https:" || origin.pathname !== "/" || origin.search || origin.hash) {
+    throw new Error("Capability URL host must be an HTTPS origin or hostname without a path, query, or fragment");
+  }
+  if (!config.allowedHosts.some((host) => host.toLowerCase() === origin.hostname.toLowerCase())) {
+    throw new Error(`Add ${JSON.stringify(origin.hostname)} to allowedHosts in ${getConfigPath()} first`);
+  }
+  console.log(`${origin.origin}/${config.capabilityToken}/mcp`);
+}
+
+function runRotateCapability() {
+  if (process.env["CODEHANDS_CAPABILITY_TOKEN"]) {
+    throw new Error("Unset CODEHANDS_CAPABILITY_TOKEN before rotating the token file");
+  }
+  const tokenPath = rotateCapabilityTokenFile();
+  console.log(`Capability URL token rotated at: ${tokenPath}`);
+  console.log("Restart CodeHands and update the URL in every connected client.");
+}
+
 async function main() {
   switch (command) {
     case "start":
@@ -399,6 +481,12 @@ async function main() {
     case "doctor":
       await runDoctor();
       break;
+    case "capability-url":
+      runCapabilityUrl();
+      break;
+    case "rotate-capability":
+      runRotateCapability();
+      break;
     default:
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
@@ -408,6 +496,8 @@ async function main() {
       console.log("  codehands init     Create default config file");
       console.log("  codehands logs -f  Follow sanitized tool activity");
       console.log("  codehands doctor   Verify configuration, exec-server, and sandboxing");
+      console.log("  codehands capability-url <host>  Print the secret HTTPS MCP URL");
+      console.log("  codehands rotate-capability      Replace a disclosed capability token");
       console.log("");
       console.log(`Config: ${getConfigPath()}`);
       break;

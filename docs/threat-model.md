@@ -2,8 +2,10 @@
 
 ## Status
 
-Implemented baseline for local pre-1.0 use. Public remote access remains out of
-scope until an MCP-compatible OAuth gateway is implemented and reviewed.
+Implemented baseline for local pre-1.0 use plus temporary, single-user remote
+testing with a random capability URL. Shared and production public access
+remain out of scope until an MCP-compatible OAuth gateway is implemented and
+reviewed.
 
 ## Assets
 
@@ -11,7 +13,7 @@ scope until an MCP-compatible OAuth gateway is implemented and reviewed.
 - Files and credentials outside approved workspaces
 - Terminal and local process access
 - Local/private services and cloud metadata endpoints
-- MCP bearer tokens and audit records
+- MCP bearer tokens, capability URLs, and audit records
 
 ## Trust boundaries
 
@@ -27,7 +29,7 @@ scope until an MCP-compatible OAuth gateway is implemented and reviewed.
 
 | Threat | Control |
 | --- | --- |
-| Public unauthenticated MCP access | Loopback binding, bearer authentication, host/origin checks |
+| Public unauthenticated MCP access | Loopback binding, bearer or 256-bit capability-path authentication, host/origin checks |
 | Brute force or request flooding | Fixed-window rate limit, request-size limit, session expiry |
 | Directory traversal | Normalized containment against approved workspaces |
 | Symlink escape | Canonical real-path containment for existing targets and deepest existing parent |
@@ -57,6 +59,9 @@ scope until an MCP-compatible OAuth gateway is implemented and reviewed.
 - Bearer authentication is suitable for local clients and an authenticated
   reverse proxy, but it does not implement the OAuth flow expected by all web
   MCP clients.
+- A capability URL is a bearer credential and can leak through browser,
+  client, proxy, or service logs. It is limited to temporary personal testing
+  and must be rotated after possible disclosure.
 - DNS can change between validation and the executor's request. Outbound HTTP
   should remain disabled unless necessary, and allowed hosts should be narrow.
 - `exec-server` remains experimental. `codehands doctor` and contract CI reduce

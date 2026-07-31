@@ -143,4 +143,6 @@ Commands must use separate argv:
   `workspace_list`.
 
 For remote web clients, read [hosted-gateway.md](hosted-gateway.md). Do not
-substitute a public tunnel for OAuth.
+substitute a plain public tunnel for authentication. For temporary personal
+testing, use the separately generated capability URL in
+`docs/hosted-gateway.md`; use OAuth for shared or production access.
