@@ -56,61 +56,85 @@ export class ExecServerManager extends EventEmitter {
   }
 
   private async spawnAndInit(): Promise<ExecServerProcess> {
-    const child = spawn(this.codexBinary, ["exec-server", "--listen", this.listenMode], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
-    });
+    return new Promise<ExecServerProcess>((resolve, reject) => {
+      let settled = false;
 
-    this.process = child;
+      const child = spawn(this.codexBinary, ["exec-server", "--listen", this.listenMode], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...globalThis.process.env },
+      });
 
-    if (!child.stdout || !child.stdin) {
-      throw new Error("Failed to get stdio streams from exec-server process");
-    }
+      this.process = child;
 
-    const rpc = new RpcClient({
-      stdin: child.stdin,
-      stdout: child.stdout,
-    });
-    this.rpc = rpc;
+      child.on("error", (err: Error) => {
+        if (!settled) {
+          settled = true;
+          const isNotFound = (err as NodeJS.ErrnoException).code === "ENOENT";
+          const message = isNotFound
+            ? `Codex binary not found: "${this.codexBinary}". Install it with: npm install -g @openai/codex`
+            : `Failed to start exec-server: ${err.message}`;
+          reject(new Error(message));
+          return;
+        }
+        this.emit("error", err);
+        if (!this.stopped) {
+          this.handleCrash(null, null);
+        }
+      });
 
-    child.stderr?.on("data", (chunk: Buffer) => {
-      this.emit("stderr", chunk.toString("utf-8"));
-    });
-
-    child.on("exit", (code, signal) => {
-      this.emit("exit", code, signal);
-      if (!this.stopped) {
-        this.handleCrash(code, signal);
+      if (!child.stdout || !child.stdin) {
+        settled = true;
+        reject(new Error("Failed to get stdio streams from exec-server process"));
+        return;
       }
+
+      const rpc = new RpcClient({
+        stdin: child.stdin,
+        stdout: child.stdout,
+      });
+      this.rpc = rpc;
+
+      child.stderr?.on("data", (chunk: Buffer) => {
+        this.emit("stderr", chunk.toString("utf-8"));
+      });
+
+      child.on("exit", (code: number | null, signal: string | null) => {
+        this.emit("exit", code, signal);
+        if (!settled) {
+          settled = true;
+          reject(new Error(`exec-server exited unexpectedly: code=${code}, signal=${signal}`));
+          return;
+        }
+        if (!this.stopped) {
+          this.handleCrash(code, signal);
+        }
+      });
+
+      rpc.on("notification", (method: string, params: unknown) => {
+        this.emit("notification", method, params);
+      });
+
+      rpc.on("close", () => {
+        if (!this.stopped) {
+          this.handleCrash(null, null);
+        }
+      });
+
+      rpc.call<InitializeResponse>(METHODS.initialize, {
+        clientName: "codehands",
+      }).then((response) => {
+        this.sessionId = response.sessionId;
+        rpc.notify(METHODS.initialized);
+        settled = true;
+        this.emit("ready", response.sessionId);
+        resolve({ rpc, sessionId: response.sessionId, process: child });
+      }).catch((err) => {
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      });
     });
-
-    child.on("error", (err: Error) => {
-      this.emit("error", err);
-      if (!this.stopped) {
-        this.handleCrash(null, null);
-      }
-    });
-
-    rpc.on("notification", (method: string, params: unknown) => {
-      this.emit("notification", method, params);
-    });
-
-    rpc.on("close", () => {
-      if (!this.stopped) {
-        this.handleCrash(null, null);
-      }
-    });
-
-    const response = await rpc.call<InitializeResponse>(METHODS.initialize, {
-      clientName: "codehands",
-    });
-    this.sessionId = response.sessionId;
-
-    rpc.notify(METHODS.initialized);
-
-    this.emit("ready", response.sessionId);
-
-    return { rpc, sessionId: response.sessionId, process: child };
   }
 
   private handleCrash(code: number | null, signal: string | null): void {
