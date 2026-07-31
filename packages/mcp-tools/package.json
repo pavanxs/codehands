@@ -1,0 +1,19 @@
+{
+  "name": "@codehands/mcp-tools",
+  "version": "0.1.0",
+  "description": "MCP tool definitions and handlers for CodeHands",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@codehands/codex-adapter": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

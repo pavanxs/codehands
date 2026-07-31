@@ -1,0 +1,25 @@
+{
+  "name": "@codehands/local-agent",
+  "version": "0.1.0",
+  "description": "CodeHands MCP server - HTTP core + stdio adapter",
+  "type": "module",
+  "main": "./dist/server.js",
+  "bin": {
+    "codehands": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js start"
+  },
+  "dependencies": {
+    "@codehands/codex-adapter": "workspace:*",
+    "@codehands/mcp-tools": "workspace:*",
+    "@codehands/policy-engine": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

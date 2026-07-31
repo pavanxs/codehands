@@ -1,0 +1,16 @@
+{
+  "name": "@codehands/codex-adapter",
+  "version": "0.1.0",
+  "description": "JSON-RPC client for Codex exec-server",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,103 @@
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { CodexAdapter } from "@codehands/codex-adapter";
+import { TOOL_DEFINITIONS, getHandler, type ToolContext } from "@codehands/mcp-tools";
+import { WorkspaceValidator, BlockedCommands, normalizeArgv } from "@codehands/policy-engine";
+import type { CodehandsConfig } from "./config.js";
+
+export interface SessionState {
+  activeWorkspace: string | null;
+}
+
+export function createServer(config: CodehandsConfig) {
+  const adapter = new CodexAdapter({ codexBinary: config.codexBinary });
+  const validator = new WorkspaceValidator(config.workspaces);
+  const blockedCmds = new BlockedCommands({ extraPatterns: config.blockedCommands });
+
+  const sessions = new Map<string, SessionState>();
+
+  const server = new Server(
+    { name: "codehands", version: "0.1.0" },
+    { capabilities: { tools: {} } },
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: TOOL_DEFINITIONS.map((def) => ({
+        name: def.name,
+        description: def.description,
+        inputSchema: {
+          type: "object" as const,
+          ...def.inputSchema,
+        },
+      })),
+    };
+  });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const { name, arguments: params } = request.params;
+    const sessionId = (extra.sessionId as string | undefined) ?? "default";
+
+    if (!sessions.has(sessionId)) {
+      sessions.set(sessionId, { activeWorkspace: null });
+    }
+    const session = sessions.get(sessionId)!;
+
+    const ctx: ToolContext = {
+      adapter,
+      activeWorkspace: session.activeWorkspace,
+      workspaces: validator.getWorkspaces(),
+      resolvePath: (p: string) => {
+        const resolved = validator.resolvePath(p, session.activeWorkspace);
+        const check = validator.validate(resolved);
+        if (!check.allowed) {
+          throw new Error(check.reason);
+        }
+        return check.resolvedPath;
+      },
+    };
+
+    if (name === "process_start" && params) {
+      const command = params["command"] as string;
+      const args = (params["args"] as string[] | undefined) ?? [];
+      const argv = normalizeArgv(command, args);
+      const blockCheck = blockedCmds.isBlocked(argv);
+      if (blockCheck.blocked) {
+        return {
+          content: [{ type: "text", text: blockCheck.reason! }],
+          isError: true,
+        } as const;
+      }
+    }
+
+    const handler = getHandler(name);
+    if (!handler) {
+      return {
+        content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        isError: true,
+      } as const;
+    }
+
+    try {
+      const result = await handler((params ?? {}) as Record<string, unknown>, ctx);
+      if (name === "workspace_set" && !result.isError) {
+        session.activeWorkspace = ctx.activeWorkspace;
+      }
+      return {
+        content: result.content as Array<{ type: "text"; text: string }>,
+        isError: result.isError,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text", text: `Error: ${message}` }],
+        isError: true,
+      } as const;
+    }
+  });
+
+  return { server, adapter };
+}
