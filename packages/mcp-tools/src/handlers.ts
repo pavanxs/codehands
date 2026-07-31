@@ -148,7 +148,7 @@ const handlers: Record<string, HandlerFn> = {
   async process_read(params, ctx) {
     const processId = params["processId"] as string;
     if (!ctx.ownedProcesses.has(processId)) {
-      return errorResult(`Process "${processId}" does not belong to this session`);
+      return errorResult(`Process "${processId}" not found. Use process_list to see active processes.`);
     }
     const afterSeq = params["afterSeq"] as number | undefined;
     const waitMs = params["waitMs"] as number | undefined;
@@ -178,7 +178,7 @@ const handlers: Record<string, HandlerFn> = {
   async process_write(params, ctx) {
     const processId = params["processId"] as string;
     if (!ctx.ownedProcesses.has(processId)) {
-      return errorResult(`Process "${processId}" does not belong to this session`);
+      return errorResult(`Process "${processId}" not found. Use process_list to see active processes.`);
     }
     const input = params["input"] as string;
     const chunk = Buffer.from(input, "utf-8").toString("base64");
@@ -190,7 +190,7 @@ const handlers: Record<string, HandlerFn> = {
   async process_terminate(params, ctx) {
     const processId = params["processId"] as string;
     if (!ctx.ownedProcesses.has(processId)) {
-      return errorResult(`Process "${processId}" does not belong to this session`);
+      return errorResult(`Process "${processId}" not found. Use process_list to see active processes.`);
     }
     const result = await ctx.adapter.processTerminate({ processId });
     const info = ctx.ownedProcesses.get(processId);
@@ -201,7 +201,7 @@ const handlers: Record<string, HandlerFn> = {
   async process_signal(params, ctx) {
     const processId = params["processId"] as string;
     if (!ctx.ownedProcesses.has(processId)) {
-      return errorResult(`Process "${processId}" does not belong to this session`);
+      return errorResult(`Process "${processId}" not found. Use process_list to see active processes.`);
     }
     const signal = (params["signal"] as "interrupt" | undefined) ?? "interrupt";
     await ctx.adapter.processSignal({ processId, signal });

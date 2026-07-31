@@ -15,6 +15,7 @@ export interface SessionState {
 }
 
 let globalWorkspace: string | null = null;
+const globalProcesses: Map<string, ProcessInfo> = new Map();
 
 export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger, sessionId?: string) {
   const validator = new WorkspaceValidator(config.workspaces);
@@ -25,7 +26,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
     globalWorkspace = validator.getWorkspaces()[0] ?? null;
   }
 
-  const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: new Map() };
+  const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: globalProcesses };
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
