@@ -7,10 +7,13 @@
   "scripts": {
     "build": "pnpm --recursive run build",
     "check": "pnpm --recursive run check",
-    "test": "pnpm --recursive run test",
+    "test": "vitest run",
     "dev:agent": "pnpm --filter @mcp-harness/local-agent dev"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
   }
 }
