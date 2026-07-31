@@ -59,10 +59,16 @@ export class ExecServerManager extends EventEmitter {
     return new Promise<ExecServerProcess>((resolve, reject) => {
       let settled = false;
 
-      const child = spawn(this.codexBinary, ["exec-server", "--listen", this.listenMode], {
+      const isWindows = globalThis.process.platform === "win32";
+      const spawnCmd = isWindows ? "cmd.exe" : this.codexBinary;
+      const spawnArgs = isWindows
+        ? ["/c", this.codexBinary, "exec-server", "--listen", this.listenMode]
+        : ["exec-server", "--listen", this.listenMode];
+
+      const child = spawn(spawnCmd, spawnArgs, {
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...globalThis.process.env },
-        shell: globalThis.process.platform === "win32",
+        windowsHide: true,
       });
 
       this.process = child;
