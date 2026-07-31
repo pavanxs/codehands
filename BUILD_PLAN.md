@@ -156,7 +156,7 @@ Remote access from anywhere.
 | What to build | Detail |
 | --- | --- |
 | Same HTTP server, exposed publicly | Port forwarded via tunnel |
-| Remote-access documentation | Explain that direct public tunnels are unsupported until the OAuth gateway exists |
+| Tunnel documentation | How to set up Tailscale Funnel |
 | Auth middleware (v2) | Token-based auth for remote connections |
 
 ### 10. Protocol + Shared — `packages/protocol/`, `packages/shared/`

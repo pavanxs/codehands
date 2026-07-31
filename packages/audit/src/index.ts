@@ -10,7 +10,6 @@ export interface AuditEntry {
   durationMs: number;
   success: boolean;
   error?: string;
-  resultSummary?: string;
 }
 
 export interface AuditLoggerOptions {
@@ -25,8 +24,6 @@ export class AuditLogger {
   private redactContent: boolean;
   private stream: fs.WriteStream | null = null;
   private currentDate: string = "";
-  private recentEntries: AuditEntry[] = [];
-  private readonly recentLimit = 200;
 
   constructor(options: AuditLoggerOptions = {}) {
     this.logDir = options.logDir ?? path.join(os.homedir(), ".codehands", "logs");
@@ -37,24 +34,11 @@ export class AuditLogger {
   log(entry: AuditEntry): void {
     if (!this.enabled) return;
 
-    const sanitized = this.redactContent ? this.redact(entry) : structuredClone(entry);
+    const sanitized = this.redactContent ? this.redact(entry) : entry;
     const line = JSON.stringify(sanitized) + "\n";
-
-    this.recentEntries.push(sanitized);
-    if (this.recentEntries.length > this.recentLimit) {
-      this.recentEntries.splice(0, this.recentEntries.length - this.recentLimit);
-    }
 
     const stream = this.getStream();
     stream.write(line);
-  }
-
-  recent(sessionId?: string, limit = 20): AuditEntry[] {
-    const boundedLimit = Math.max(1, Math.min(limit, 100));
-    const entries = sessionId
-      ? this.recentEntries.filter((entry) => entry.sessionId === sessionId)
-      : this.recentEntries;
-    return entries.slice(-boundedLimit).map((entry) => structuredClone(entry));
   }
 
   async close(): Promise<void> {
@@ -76,76 +60,33 @@ export class AuditLogger {
     }
 
     if (!fs.existsSync(this.logDir)) {
-      fs.mkdirSync(this.logDir, { recursive: true, mode: 0o700 });
+      fs.mkdirSync(this.logDir, { recursive: true });
     }
-    fs.chmodSync(this.logDir, 0o700);
 
     this.currentDate = today;
     const logPath = path.join(this.logDir, `${today}.jsonl`);
-    this.stream = fs.createWriteStream(logPath, { flags: "a", mode: 0o600 });
+    this.stream = fs.createWriteStream(logPath, { flags: "a" });
     return this.stream;
   }
 
   private redact(entry: AuditEntry): AuditEntry {
-    return {
-      ...entry,
-      params: sanitizeRecord(entry.params),
-      error: entry.error ? redactSecretsInText(entry.error) : undefined,
-      resultSummary: entry.resultSummary ? redactSecretsInText(entry.resultSummary) : undefined,
-    };
+    const redacted = { ...entry, params: { ...entry.params } };
+
+    if (redacted.params["content"] !== undefined) {
+      const content = redacted.params["content"] as string;
+      redacted.params["content"] = `[${content.length} chars]`;
+    }
+
+    if (redacted.params["dataBase64"] !== undefined) {
+      redacted.params["dataBase64"] = "[redacted]";
+    }
+
+    if (redacted.params["body"] !== undefined) {
+      redacted.params["body"] = "[redacted]";
+    }
+
+    return redacted;
   }
-}
-
-const SECRET_KEY = /(authorization|cookie|token|secret|password|passwd|api[-_]?key|private[-_]?key)/i;
-const CONTENT_KEY = /^(body|content|dataBase64|input)$/i;
-
-function sanitizeRecord(record: Record<string, unknown>): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
-    if (SECRET_KEY.test(key) || key === "env" || key === "headers") {
-      sanitized[key] = "[redacted]";
-    } else if (CONTENT_KEY.test(key)) {
-      sanitized[key] = typeof value === "string" ? `[${value.length} chars]` : "[redacted]";
-    } else if (key === "args" && Array.isArray(value)) {
-      sanitized[key] = redactCommandArgs(value);
-    } else {
-      sanitized[key] = sanitizeUnknown(value);
-    }
-  }
-  return sanitized;
-}
-
-function sanitizeUnknown(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeUnknown);
-  if (value && typeof value === "object") return sanitizeRecord(value as Record<string, unknown>);
-  if (typeof value === "string") return redactSecretsInText(value);
-  return value;
-}
-
-function redactCommandArgs(args: unknown[]): unknown[] {
-  let redactNext = false;
-  return args.map((value) => {
-    if (redactNext) {
-      redactNext = false;
-      return "[redacted]";
-    }
-    if (typeof value !== "string") return sanitizeUnknown(value);
-    if (/^--?(token|password|secret|api[-_]?key)$/i.test(value)) {
-      redactNext = true;
-      return value;
-    }
-    if (/^--?(token|password|secret|api[-_]?key)=/i.test(value)) {
-      return `${value.split("=")[0]}=[redacted]`;
-    }
-    return redactSecretsInText(value);
-  });
-}
-
-function redactSecretsInText(value: string): string {
-  return value.replace(
-    /\b(authorization|token|password|secret|api[-_]?key)\s*[:=]\s*([^\s,;]+)/gi,
-    "$1=[redacted]",
-  );
 }
 
 export function createTimedCall<T>(

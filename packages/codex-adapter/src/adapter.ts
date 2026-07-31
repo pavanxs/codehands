@@ -24,7 +24,6 @@ import {
   type FsReadDirectoryParams,
   type FsReadDirectoryResponse,
   type FsWalkParams,
-  type FsWalkResponse,
   type FsRemoveParams,
   type FsRemoveResponse,
   type FsCopyParams,
@@ -40,7 +39,6 @@ export class CodexAdapter extends EventEmitter {
 
   constructor(options: SpawnOptions = {}) {
     super();
-    this.setMaxListeners(100);
     this.manager = new ExecServerManager(options);
 
     this.manager.on("ready", (sessionId: string) => {
@@ -92,15 +90,10 @@ export class CodexAdapter extends EventEmitter {
 
   async processStart(params: Omit<ExecParams, "processId"> & { processId?: string }): Promise<ExecResponse> {
     const processId = params.processId ?? `proc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const response = await this.rpc().call<ExecResponse>(METHODS.processStart, {
+    return this.rpc().call<ExecResponse>(METHODS.processStart, {
       ...params,
       processId,
     });
-    if (!response.sandboxType || response.sandboxType === "none") {
-      await this.processTerminate({ processId }).catch(() => undefined);
-      throw new Error("exec-server did not apply a platform sandbox; refusing to run the command");
-    }
-    return response;
   }
 
   async processRead(params: ReadParams): Promise<ReadResponse> {
@@ -141,8 +134,8 @@ export class CodexAdapter extends EventEmitter {
     return this.rpc().call<FsReadDirectoryResponse>(METHODS.fsReadDirectory, params);
   }
 
-  async fsWalk(params: FsWalkParams): Promise<FsWalkResponse> {
-    return this.rpc().call<FsWalkResponse>(METHODS.fsWalk, params);
+  async fsWalk(params: FsWalkParams): Promise<unknown> {
+    return this.rpc().call(METHODS.fsWalk, params);
   }
 
   async fsRemove(params: FsRemoveParams): Promise<FsRemoveResponse> {

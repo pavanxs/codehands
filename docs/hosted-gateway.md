@@ -1,52 +1,50 @@
-# Hosted gateway and remote access
+# Hosted Gateway (Remote Access)
 
-## Current support
+CodeHands already serves HTTP. To access it remotely (from phone, another
+machine, or ChatGPT's web interface), expose port 3100 via a tunnel.
 
-Direct public remote access is not supported in the pre-1.0 release.
+## Recommended: Tailscale Funnel
 
-Tailscale Funnel, ngrok, and Cloudflare Tunnel expose a local service to the
-public internet. TLS protects traffic in transit, but a secret URL and a tunnel
-are not application authentication.
+Free, private, no account sharing needed.
 
-CodeHands HTTP mode therefore:
+### Setup
 
-- binds to `127.0.0.1` by default;
-- requires a bearer token;
-- rejects unapproved `Host` and `Origin` values;
-- rate-limits requests and expires inactive sessions.
+1. Install Tailscale: https://tailscale.com/download
+2. Enable Funnel for your machine:
 
-Do not add a Funnel/ngrok/Cloudflare hostname to `allowedHosts` and publish the
-port directly.
-
-## Local tailnet access
-
-Tailscale Serve can make a service reachable only within a tailnet, unlike
-Funnel. The MCP client must still send CodeHands' bearer token. This is useful
-for a controlled native client but does not make a cloud-hosted ChatGPT web
-session part of the tailnet.
-
-## Required public design
-
-A supported public deployment needs an MCP-compatible OAuth 2.1 gateway in
-front of CodeHands:
-
-```text
-Web MCP client
-  -> HTTPS + OAuth/PKCE gateway
-  -> fixed upstream bearer credential
-  -> CodeHands on loopback/private network
+```bash
+tailscale funnel 3100
 ```
 
-The gateway must provide:
+3. You'll get a public URL like `https://your-machine.tail12345.ts.net`
+4. Use `https://your-machine.tail12345.ts.net/mcp` as the MCP endpoint
 
-- OAuth authorization-code flow with PKCE;
-- exact redirect URI and client validation;
-- short-lived, audience-bound access tokens;
-- refresh-token rotation and revocation;
-- rate limits and request-size limits;
-- strict forwarding only to `/mcp`;
-- no forwarding of arbitrary client authorization headers;
-- security event logging without token values.
+### Why Tailscale
 
-Until that component is implemented and reviewed, use stdio or authenticated
-local HTTP.
+- Free for personal use (up to 3 users)
+- End-to-end encrypted
+- No port forwarding needed
+- Works behind NAT/firewalls
+- You control access (approve devices in Tailscale admin)
+
+## Alternative: Cloudflare Tunnel
+
+```bash
+cloudflared tunnel --url http://localhost:3100
+```
+
+Works but less control over who can access the URL.
+
+## Alternative: ngrok
+
+```bash
+ngrok http 3100
+```
+
+Quick for testing. URL changes on restart (unless paid).
+
+## Security Note
+
+When exposing publicly, add auth middleware (v2 scope). For now, Tailscale's
+device-level authentication is sufficient — only your approved devices can
+reach the Funnel URL.

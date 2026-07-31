@@ -7,11 +7,10 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "check": "tsc --noEmit",
     "dev": "tsc --watch"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.5.0"
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
   }
 }

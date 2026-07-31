@@ -1,35 +1,19 @@
-# Local agent
+# Local agent (CodeHands server)
 
-The local agent implements authenticated MCP Streamable HTTP and stdio
-transports over one shared Codex exec-server.
+The main CodeHands process. This is the MCP server that web AIs connect to.
 
-HTTP defaults:
+Architecture:
+- **HTTP core (Streamable HTTP):** Primary transport. Handles multiple
+  simultaneous AI client connections. Serves on localhost for local mode.
+  Same port exposed via tunnel for hosted mode.
+- **stdio adapter:** Thin wrapper for stdio-only clients (e.g., Claude Desktop).
+  Connects internally to the HTTP core.
+- **exec-server management:** Spawns Codex exec-server on startup, manages its
+  lifecycle, handles auto-restart.
 
-- `127.0.0.1:3100`
-- bearer authentication from `~/.codehands/http-token`
-- approved Host and Origin values
-- 1 MiB request limit
-- 120 requests per minute per peer
-- 30-minute inactive-session expiry
+Startup: `codehands start`
+- Spawns exec-server as a child process
+- Starts HTTP server on configured port
+- Ready to accept MCP connections
 
-Each MCP session has an independent active workspace, process ownership set,
-audit history, and transport lifecycle. Closing a session terminates its
-remaining processes and closes its audit stream.
-
-Commands:
-
-```text
-codehands init
-codehands doctor
-codehands start
-codehands stdio
-codehands logs -f
-```
-
-The server performs a sandbox preflight against the first existing configured
-workspace before opening the HTTP listener.
-
-Set `CODEHANDS_CONFIG_DIR` to an absolute directory to isolate configuration,
-tokens, and logs for tests or multiple local instances. Child processes receive
-the active workspace as `HOME`/`USERPROFILE`; the real user home is not exposed
-through the default sandbox.
+No implementation has been added yet.

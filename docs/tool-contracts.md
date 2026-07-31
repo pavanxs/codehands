@@ -1,46 +1,52 @@
 # MCP tool contracts
 
-## Status
+## Status: Decided
 
-Implemented. Tools are atomic and provider-neutral. CodeHands validates and
-forwards operations but does not run an autonomous loop.
+All exec-server operations are exposed as MCP tools using Codex's exact naming.
+CodeHands is a passthrough — it validates, forwards, and returns.
 
-## Tool list
+## Tool list (16 tools)
 
-| Tool | Purpose |
-| --- | --- |
-| `fs_readFile` | Read all or a line range |
-| `fs_writeFile` | Create or overwrite a text file |
-| `fs_replaceText` | Conflict-safe exact replacement |
-| `fs_applyPatch` | Context-verified unified-diff hunks for one file |
-| `fs_searchText` | Workspace text/regex search |
-| `fs_createDirectory` | Create directories |
-| `fs_readDirectory` | List a directory |
-| `fs_walk` | Bounded tree walk without following directory symlinks |
-| `fs_remove` | Remove a file or directory |
-| `fs_copy` | Copy a file or directory |
-| `fs_getMetadata` | Read file metadata |
-| `process_start` | Start an executable with explicit argv |
-| `process_read` | Read a session-owned process |
-| `process_write` | Write to a session-owned process |
-| `process_signal` | Interrupt a session-owned process |
-| `process_terminate` | Terminate a session-owned process |
-| `git_status` | Concise Git status |
-| `git_diff` | Unstaged or staged Git diff |
-| `http_request` | Policy-controlled outbound request, disabled by default |
-| `workspace_list` | List configured roots |
-| `workspace_set` | Select this session's active root |
-| `activity_recent` | Recent sanitized calls and durations for this session |
+MCP spec only allows `[A-Za-z0-9_-.]` in tool names (no slashes). We use
+underscore as the namespace separator. CodeHands converts back to `/` for
+exec-server JSON-RPC calls.
 
-## Invariants
+| MCP tool name | Category | What it does |
+| --- | --- | --- |
+| fs_readFile | File system | Read a file's contents |
+| fs_writeFile | File system | Write/create a file |
+| fs_createDirectory | File system | Create a directory |
+| fs_readDirectory | File system | List directory contents |
+| fs_walk | File system | Walk a directory tree recursively |
+| fs_remove | File system | Delete a file or directory |
+| fs_copy | File system | Copy a file |
+| fs_getMetadata | File system | Get file info (size, modified, etc.) |
+| process_start | Process | Run a terminal command |
+| process_read | Process | Read output from a running command |
+| process_write | Process | Send input to a running command |
+| process_terminate | Process | Kill a running command |
+| process_signal | Process | Send a signal to a process |
+| http_request | HTTP | Fetch a URL from the executor machine |
+| workspace_list | Workspace | List approved workspaces from config |
+| workspace_set | Workspace | Set active workspace for this session |
 
-- A relative path requires an active workspace.
-- Absolute paths must remain in that active workspace after canonicalization.
-- File and process RPCs always carry a sandbox context.
-- `process_start.command` is one executable; arguments belong in `args`.
-- Shell executables and environment overrides require explicit configuration.
-- Process handles are not valid outside the MCP session that created them.
-- HTTP requires an enabled policy, allowed method/host/protocol, and safe DNS
-  result.
-- Replace and patch tools verify expected content before writing.
-- Tool failures are structured and included in sanitized activity records.
+## Tool call flow
+
+1. Web AI calls an MCP tool (e.g., `fs_readFile` with path).
+2. CodeHands resolves the full path (using active workspace for relative paths).
+3. Policy engine checks: is the path within an approved workspace?
+4. Policy engine checks: is this a blocked command? (process tools only)
+5. Codex adapter converts tool name (`fs_readFile` → `fs/readFile`) and
+   forwards the JSON-RPC call to exec-server.
+6. Exec-server executes and returns the result.
+7. CodeHands returns the result to the web AI.
+
+## Constraints
+
+- The web AI controls the agent loop. Tools are atomic operations, not
+  autonomous tasks.
+- Workspace validation: all paths must fall within approved workspaces.
+- Blocked commands: dangerous commands are rejected before reaching exec-server.
+- No max file size limit (trust exec-server).
+- Auth required for hosted mode (v2).
+- Rate limiting for hosted mode (v2).

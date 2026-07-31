@@ -1,96 +1,92 @@
-# CodeHands setup tutorial
+# CodeHands Setup Tutorial
 
-This guide configures a local, sandboxed CodeHands server. It intentionally
-does not publish the MCP endpoint to the internet.
+Code from any AI chat. This guide gets you running in under 5 minutes.
 
-## 1. Install prerequisites
+## What You Get
 
-- Node.js 22
-- Git
-- pnpm 10.10 through Corepack
-- Rust through <https://rustup.rs/> to build the pinned executor
+After setup, you can open ChatGPT or Claude and tell it to edit files, run
+commands, and manage code on your local machine — from any device.
 
-Windows users should run these commands in PowerShell. macOS and Linux users
-can use their normal terminal.
+## Prerequisites
 
-## 2. Clone the correct repository
+- Windows 10/11 (macOS/Linux also works)
+- Node.js 22 or newer: https://nodejs.org
+- Git: https://git-scm.com
+- pnpm: `npm install -g pnpm`
+
+## Step 1: Install Codex (the execution engine)
 
 ```bash
-git clone --recurse-submodules https://github.com/pavanxs/codehands.git
+npm install -g @openai/codex
+```
+
+Verify it works:
+
+```bash
+codex --version
+```
+
+## Step 2: Clone and build CodeHands
+
+```bash
+git clone https://github.com/AjayPavan/codehands.git
 cd codehands
-corepack enable
-pnpm install --frozen-lockfile
+pnpm install
+pnpm run build
 ```
 
-If the repository was cloned without submodules:
-
-```bash
-git submodule update --init vendor/codex
-```
-
-Do not use `git submodule update --remote`; the recorded commit is the tested
-protocol version.
-
-## 3. Build CodeHands and its pinned Codex executor
-
-```bash
-pnpm build
-pnpm test
-pnpm codex:check
-pnpm codex:build
-```
-
-The last command prints a path ending in:
-
-- `vendor/codex/codex-rs/target/release/codex` on macOS/Linux
-- `vendor\codex\codex-rs\target\release\codex.exe` on Windows
-
-## 4. Install the local command
+## Step 3: Make it globally available
 
 ```bash
 cd apps/local-agent
 npm link
 cd ../..
+```
+
+Now `codehands` works from anywhere on your system.
+
+## Step 4: Initialize config
+
+```bash
 codehands init
 ```
 
-## 5. Configure one or more workspaces
-
-Open `~/.codehands/config.json`. Add exact project paths and the absolute
-`codexBinary` path printed by the build:
+This creates `~/.codehands/config.json`. Open it and add your project folders:
 
 ```json
 {
   "workspaces": [
-    "C:/Users/you/projects/my-app"
+    "C:/Users/you/projects/my-app",
+    "C:/Users/you/projects/another-project"
   ],
-  "codexBinary": "C:/path/to/codehands/vendor/codex/codex-rs/target/release/codex.exe"
+  "port": 3100,
+  "blockedCommands": []
 }
 ```
 
-Keep authentication enabled. Keep `host` set to `127.0.0.1`. Keep outbound
-HTTP disabled unless a specific use case requires a narrow allowlist.
+Only folders listed here can be accessed by AI.
 
-## 6. Verify and start
+## Step 5: Start the server
 
 ```bash
-codehands doctor
 codehands start
 ```
 
-`doctor` checks:
+You should see:
 
-- configured workspace existence;
-- bearer-token availability;
-- exec-server startup and protocol compatibility;
-- real platform sandbox enforcement.
+```
+Starting exec-server...
+exec-server ready.
+CodeHands MCP server running on http://localhost:3100/mcp
+Health check: http://localhost:3100/health
+Workspaces: C:/Users/you/projects/my-app
+```
 
-The server refuses to start with a configured workspace when sandbox
-enforcement cannot be proved.
+## Connecting AI Clients
 
-## 7. Connect a local client
+### Claude Desktop (recommended for local use)
 
-Use stdio when supported:
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
@@ -103,44 +99,101 @@ Use stdio when supported:
 }
 ```
 
-For a local HTTP client, configure `http://127.0.0.1:3100/mcp` and supply the
-bearer token stored in `~/.codehands/http-token`.
+Restart Claude Desktop. Tools appear automatically.
 
-## 8. Use it efficiently
+### Claude.ai or ChatGPT (remote — needs tunnel)
 
-The client should begin with `workspace_list` and `workspace_set`. A normal
-request can then say simply: “Use CodeHands to make this change and verify the
-Git diff.” No unusual path preamble is needed.
+Your server runs locally. Cloud AI services can't reach `localhost`. You need
+a tunnel to create a public HTTPS URL.
 
-Fast, conflict-safe tools are available for:
+**Quick option — ngrok:**
 
-- line-range reads;
-- text search;
-- exact replacement;
-- unified patches;
-- Git status and diff;
-- recent sanitized activity.
-
-Commands must use separate argv:
-
-```json
-{
-  "command": "npm",
-  "args": ["test"]
-}
+```bash
+npm install -g ngrok
+ngrok http 3100
 ```
+
+Copy the HTTPS URL (like `https://abc123.ngrok-free.app`).
+
+**Better option — Tailscale Funnel (free, permanent URL):**
+
+```bash
+tailscale funnel 3100
+```
+
+Then in Claude.ai or ChatGPT settings, add the MCP server URL:
+`https://your-url/mcp`
+
+## How It Works
+
+```
+┌─────────────┐        ┌───────────┐        ┌─────────────┐
+│ ChatGPT /   │──MCP──▶│ CodeHands │──RPC──▶│ Codex       │
+│ Claude Chat │◀───────│ (server)  │◀───────│ exec-server │
+└─────────────┘        └───────────┘        └─────────────┘
+   AI brain              Router               Executor
+   (decides)            (validates)           (does the work)
+```
+
+The AI decides what to do. CodeHands validates it's safe. The exec-server
+executes it.
+
+## Available Tools (what the AI can do)
+
+| Tool | What it does |
+| --- | --- |
+| fs_readFile | Read a file |
+| fs_writeFile | Write/create a file |
+| fs_createDirectory | Create folders |
+| fs_readDirectory | List folder contents |
+| fs_walk | Walk directory tree |
+| fs_remove | Delete files/folders |
+| fs_copy | Copy files |
+| fs_getMetadata | Get file info |
+| process_start | Run a terminal command |
+| process_read | Read command output |
+| process_write | Send input to a command |
+| process_terminate | Kill a command |
+| process_signal | Send Ctrl+C |
+| http_request | Fetch a URL |
+| workspace_list | List available projects |
+| workspace_set | Switch active project |
+
+## Security
+
+- **Workspace isolation:** AI can only access folders you explicitly approve
+- **Blocked commands:** Dangerous commands (rm -rf /, format C:, etc.) are rejected
+- **No API keys needed:** Everything runs locally, no cloud calls
+- **Audit log:** Every tool call is logged to `~/.codehands/logs/`
+
+## Updating
+
+```bash
+cd codehands
+git pull
+pnpm install
+pnpm run build
+```
+
+Then restart `codehands start`.
 
 ## Troubleshooting
 
-- Run `codehands doctor`.
-- Use `codehands logs -f` to watch sanitized calls and durations.
-- Ask the client to call `activity_recent`.
-- If sandbox verification fails, rebuild the pinned submodule and confirm that
-  `codexBinary` points to that build rather than an unrelated global Codex.
-- If authentication fails, confirm the client reads
-  `~/.codehands/http-token`; never paste the token into a chat.
-- If a workspace is ambiguous, use the exact path returned by
-  `workspace_list`.
+**"address already in use"** — Another instance is running. Kill it:
+```bash
+# Windows
+netstat -ano | findstr :3100
+taskkill /PID <pid> /F
 
-For remote web clients, read [hosted-gateway.md](hosted-gateway.md). Do not
-substitute a public tunnel for OAuth.
+# Mac/Linux
+lsof -i :3100
+kill <pid>
+```
+
+**"codex binary not found"** — Run `npm install -g @openai/codex` again.
+
+**"no active workspace set"** — Make sure your config has at least one workspace.
+If you have only one, it's auto-activated.
+
+**Claude.ai says "hostname doesn't resolve"** — Your tunnel isn't running or
+the URL expired. Restart ngrok/tailscale.

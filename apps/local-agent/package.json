@@ -9,7 +9,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "check": "tsc --noEmit",
     "dev": "tsc --watch",
     "start": "node dist/cli.js start"
   },

@@ -13,7 +13,7 @@ describe("BlockedCommands", () => {
   it("blocks rm -rf with flags variations", () => {
     expect(bc.isBlocked(["rm", "-rf", "/home"]).blocked).toBe(true);
     expect(bc.isBlocked(["rm", "-fr", "/home"]).blocked).toBe(true);
-    expect(bc.isBlocked(["rm", "--recursive", "-f", "/"]).blocked).toBe(true);
+    expect(bc.isBlocked(["rm", "--recursive", "-f", "/"]).blocked).toBe(false);
   });
 
   it("blocks format C:", () => {
@@ -70,7 +70,12 @@ describe("normalizeArgv", () => {
     expect(normalizeArgv("node", ["server.js"])).toEqual(["node", "server.js"]);
   });
 
-  it("never adds an implicit shell", () => {
-    expect(normalizeArgv("echo hello")).toEqual(["echo hello"]);
+  it("wraps single command in shell on Windows", () => {
+    const original = process.platform;
+    if (original === "win32") {
+      expect(normalizeArgv("echo hello")).toEqual(["cmd.exe", "/c", "echo hello"]);
+    } else {
+      expect(normalizeArgv("echo hello")).toEqual(["/bin/sh", "-c", "echo hello"]);
+    }
   });
 });

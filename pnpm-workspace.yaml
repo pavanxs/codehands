@@ -1,9 +1,3 @@
 packages:
   - apps/*
   - packages/*
-
-overrides:
-  vite: 7.3.6
-
-allowBuilds:
-  esbuild: true

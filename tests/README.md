@@ -1,17 +1,8 @@
 # Test layout
 
-`pnpm test` runs security and contract unit tests for:
+- unit: isolated policy, protocol, and adapter tests
+- integration: local agent and Codex communication tests
+- contract: MCP schemas and Codex interface compatibility tests
+- e2e: temporary-workspace user flows
 
-- canonical workspace and symlink containment;
-- command, shell, environment, and outbound HTTP policy;
-- bearer authentication, Host/Origin checks, and rate limiting;
-- audit redaction and session activity;
-- sandbox context construction;
-- MCP tool definitions.
-
-`tests/integration.mjs` is a manual authenticated end-to-end runner for a
-locally started server and a disposable configured workspace. It must not be
-pointed at a repository containing valuable uncommitted work.
-
-CI runs the build and unit suite on macOS, Linux, and Windows. A separate job
-verifies that `vendor/codex` is initialized at the exact recorded commit.
+No tests are implemented yet.

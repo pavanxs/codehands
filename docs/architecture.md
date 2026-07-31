@@ -14,8 +14,7 @@ Web AI (ChatGPT / Claude)
   │ MCP tool calls (Streamable HTTP or stdio)
   ▼
 CodeHands (TypeScript, HTTP core)
-  │ authenticates, rate-limits, isolates sessions
-  │ validates workspace + command + network policy
+  │ validates workspace + blocked commands
   │ JSON-RPC
   ▼
 Codex exec-server (lean Rust process)
@@ -40,8 +39,8 @@ Claude Desktop). The adapter connects internally to the HTTP server.
 - **Local (HTTP on localhost):** Primary mode. Multiple AI chats connect to one
   server. ~1-3ms latency overhead.
 - **Local (stdio adapter):** For stdio-only clients. Wraps HTTP core internally.
-- **Remote:** Requires a separately reviewed MCP-compatible OAuth gateway.
-  Direct public tunnels are not supported.
+- **Hosted (tunnel):** Same HTTP port exposed via any tunnel (Tailscale Funnel,
+  Cloudflare, ngrok). ~50-200ms latency depending on tunnel. Auth required (v2).
 
 ## Components
 
@@ -56,17 +55,15 @@ Claude Desktop). The adapter connects internally to the HTTP server.
 
 ## Workspace handling
 
-One shared exec-server serves multiple MCP sessions. Each session owns its
-active workspace and process handles. CodeHands resolves symlinks and validates
-that every requested path stays inside the session's active approved workspace
-before forwarding to exec-server. Config lives at
-`~/.codehands/config.json`.
+One shared exec-server for all workspaces. CodeHands validates that every
+requested file path falls within an approved workspace (from config) BEFORE
+forwarding to exec-server. Config lives at `~/.codehands/config.json`.
 
 ## Execution lifecycle (single tool call)
 
 1. The web AI calls an MCP tool (e.g. `fs/readFile` with path `src/app.ts`).
 2. CodeHands resolves the full path and checks it against approved workspaces.
-3. CodeHands applies command/environment or outbound-network policy.
+3. CodeHands checks the blocked commands list (for process operations).
 4. The codex adapter forwards the JSON-RPC call to exec-server.
 5. Exec-server executes the operation (reads file, runs command, etc.).
 6. The result returns through the adapter → CodeHands → back to the web AI.
@@ -78,19 +75,18 @@ it received. This server does not chain operations or make coding decisions.
 
 CodeHands spawns exec-server as a child process. They share a fate:
 - If anything crashes, restart everything (`codehands start` again).
-- If exec-server dies mid-session, CodeHands auto-restarts it up to three
-  times. Running handles become invalid and clients receive structured errors.
+- If exec-server dies mid-session, CodeHands auto-restarts it (up to 3 times)
+  and notifies connected AI clients.
 - Running processes are lost on crash — the AI simply restarts them.
 
 ## Safety model
 
-- **Workspace validation:** Canonical paths and existing parent directories
-  must remain inside the active workspace.
-- **Command execution:** argv is forwarded without an implicit shell.
-- **Exec-server sandbox:** Every operation carries a workspace permission
-  profile. Unsandboxed process responses are terminated and rejected.
-- **Outbound HTTP:** Disabled by default and allowlisted when enabled.
-- **Session isolation:** Workspace and process ownership are per session.
+- **Workspace validation:** Only paths within approved folders (from config) are
+  forwarded. All other paths are rejected at the CodeHands layer.
+- **Blocked commands:** A configurable list of dangerous commands (rm -rf /,
+  format C:, etc.) is rejected before reaching exec-server.
+- **Exec-server sandbox:** Codex's built-in sandboxing handles execution-level
+  safety.
 - **No API key:** exec-server is purely local. No cloud calls, no credentials.
-- **HTTP boundary:** Loopback binding, bearer authentication, host/origin
-  checks, request limits, rate limits, and session expiry are enabled.
+- **Auth (v2):** Required for hosted mode. Not needed for local.
+- **Rate limiting (v2):** Future addition for hosted mode.
