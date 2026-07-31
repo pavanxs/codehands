@@ -1,3 +1,6 @@
+import * as path from "node:path";
+import { pathToFileURL } from "node:url";
+import * as os from "node:os";
 import type { CodexAdapter } from "@codehands/codex-adapter";
 
 export interface ToolContext {
@@ -14,6 +17,10 @@ export interface ToolResult {
 
 type HandlerFn = (params: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>;
 
+function toFileUri(fsPath: string): string {
+  return pathToFileURL(fsPath).href;
+}
+
 function textResult(data: unknown): ToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
@@ -29,63 +36,63 @@ function errorResult(message: string): ToolResult {
 
 const handlers: Record<string, HandlerFn> = {
   async fs_readFile(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
-    const result = await ctx.adapter.fsReadFile({ path });
+    const fsPath = ctx.resolvePath(params["path"] as string);
+    const result = await ctx.adapter.fsReadFile({ path: toFileUri(fsPath) });
     const text = Buffer.from(result.dataBase64, "base64").toString("utf-8");
-    return textResult({ path, content: text });
+    return textResult({ path: fsPath, content: text });
   },
 
   async fs_writeFile(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
+    const fsPath = ctx.resolvePath(params["path"] as string);
     const content = params["content"] as string;
     const dataBase64 = Buffer.from(content, "utf-8").toString("base64");
-    await ctx.adapter.fsWriteFile({ path, dataBase64 });
-    return textResult({ path, written: true, bytes: Buffer.byteLength(content, "utf-8") });
+    await ctx.adapter.fsWriteFile({ path: toFileUri(fsPath), dataBase64 });
+    return textResult({ path: fsPath, written: true, bytes: Buffer.byteLength(content, "utf-8") });
   },
 
   async fs_createDirectory(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
+    const fsPath = ctx.resolvePath(params["path"] as string);
     const recursive = (params["recursive"] as boolean | undefined) ?? true;
-    await ctx.adapter.fsCreateDirectory({ path, recursive });
-    return textResult({ path, created: true });
+    await ctx.adapter.fsCreateDirectory({ path: toFileUri(fsPath), recursive });
+    return textResult({ path: fsPath, created: true });
   },
 
   async fs_readDirectory(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
-    const result = await ctx.adapter.fsReadDirectory({ path });
-    return textResult({ path, entries: result.entries });
+    const fsPath = ctx.resolvePath(params["path"] as string);
+    const result = await ctx.adapter.fsReadDirectory({ path: toFileUri(fsPath) });
+    return textResult({ path: fsPath, entries: result.entries });
   },
 
   async fs_walk(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
+    const fsPath = ctx.resolvePath(params["path"] as string);
     const options: Record<string, unknown> = {};
     if (params["maxDepth"] !== undefined) {
       options["maxDepth"] = params["maxDepth"];
     }
-    const result = await ctx.adapter.fsWalk({ path, options });
+    const result = await ctx.adapter.fsWalk({ path: toFileUri(fsPath), options });
     return textResult(result);
   },
 
   async fs_remove(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
+    const fsPath = ctx.resolvePath(params["path"] as string);
     const recursive = (params["recursive"] as boolean | undefined) ?? false;
     const force = (params["force"] as boolean | undefined) ?? false;
-    await ctx.adapter.fsRemove({ path, recursive, force });
-    return textResult({ path, removed: true });
+    await ctx.adapter.fsRemove({ path: toFileUri(fsPath), recursive, force });
+    return textResult({ path: fsPath, removed: true });
   },
 
   async fs_copy(params, ctx) {
     const sourcePath = ctx.resolvePath(params["sourcePath"] as string);
     const destinationPath = ctx.resolvePath(params["destinationPath"] as string);
     const recursive = (params["recursive"] as boolean | undefined) ?? false;
-    await ctx.adapter.fsCopy({ sourcePath, destinationPath, recursive });
+    await ctx.adapter.fsCopy({ sourcePath: toFileUri(sourcePath), destinationPath: toFileUri(destinationPath), recursive });
     return textResult({ sourcePath, destinationPath, copied: true });
   },
 
   async fs_getMetadata(params, ctx) {
-    const path = ctx.resolvePath(params["path"] as string);
-    const result = await ctx.adapter.fsGetMetadata({ path });
-    return textResult({ path, ...result });
+    const fsPath = ctx.resolvePath(params["path"] as string);
+    const result = await ctx.adapter.fsGetMetadata({ path: toFileUri(fsPath) });
+    return textResult({ path: fsPath, ...result });
   },
 
   async process_start(params, ctx) {
@@ -101,8 +108,16 @@ const handlers: Record<string, HandlerFn> = {
       return errorResult("No active workspace. Call workspace_set first or provide cwd.");
     }
 
-    const argv = [command, ...args];
-    const result = await ctx.adapter.processStart({ argv, cwd, env, tty });
+    let argv: string[];
+    if (args.length > 0) {
+      argv = [command, ...args];
+    } else {
+      const isWindows = os.platform() === "win32";
+      argv = isWindows
+        ? ["cmd.exe", "/c", command]
+        : ["/bin/sh", "-c", command];
+    }
+    const result = await ctx.adapter.processStart({ argv, cwd: toFileUri(cwd), env: env ?? {}, tty });
     return textResult({ processId: result.processId, started: true });
   },
 
@@ -189,9 +204,15 @@ const handlers: Record<string, HandlerFn> = {
 
   async workspace_set(params, ctx) {
     const workspace = params["workspace"] as string;
-    const found = ctx.workspaces.find(
-      (w) => w === workspace || w.endsWith(`/${workspace}`) || w.endsWith(`\\${workspace}`),
-    );
+    const normalize = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+    const normalizedInput = normalize(workspace);
+
+    const found = ctx.workspaces.find((w) => {
+      const nw = normalize(w);
+      return nw === normalizedInput
+        || nw.endsWith(`/${normalizedInput}`)
+        || normalizedInput.endsWith(`/${nw.split("/").pop()!}`);
+    });
     if (!found) {
       return errorResult(
         `Workspace not found: "${workspace}". Use workspace_list to see approved workspaces.`,

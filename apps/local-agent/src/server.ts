@@ -12,12 +12,11 @@ export interface SessionState {
   activeWorkspace: string | null;
 }
 
-export function createServer(config: CodehandsConfig) {
-  const adapter = new CodexAdapter({ codexBinary: config.codexBinary });
+export function createServer(config: CodehandsConfig, adapter: CodexAdapter) {
   const validator = new WorkspaceValidator(config.workspaces);
   const blockedCmds = new BlockedCommands({ extraPatterns: config.blockedCommands });
 
-  const sessions = new Map<string, SessionState>();
+  const sessionState: SessionState = { activeWorkspace: null };
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
@@ -37,21 +36,15 @@ export function createServer(config: CodehandsConfig) {
     };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, _extra) => {
     const { name, arguments: params } = request.params;
-    const sessionId = (extra.sessionId as string | undefined) ?? "default";
-
-    if (!sessions.has(sessionId)) {
-      sessions.set(sessionId, { activeWorkspace: null });
-    }
-    const session = sessions.get(sessionId)!;
 
     const ctx: ToolContext = {
       adapter,
-      activeWorkspace: session.activeWorkspace,
+      activeWorkspace: sessionState.activeWorkspace,
       workspaces: validator.getWorkspaces(),
       resolvePath: (p: string) => {
-        const resolved = validator.resolvePath(p, session.activeWorkspace);
+        const resolved = validator.resolvePath(p, sessionState.activeWorkspace);
         const check = validator.validate(resolved);
         if (!check.allowed) {
           throw new Error(check.reason);
@@ -84,7 +77,7 @@ export function createServer(config: CodehandsConfig) {
     try {
       const result = await handler((params ?? {}) as Record<string, unknown>, ctx);
       if (name === "workspace_set" && !result.isError) {
-        session.activeWorkspace = ctx.activeWorkspace;
+        sessionState.activeWorkspace = ctx.activeWorkspace;
       }
       return {
         content: result.content as Array<{ type: "text"; text: string }>,
@@ -99,5 +92,5 @@ export function createServer(config: CodehandsConfig) {
     }
   });
 
-  return { server, adapter };
+  return { server };
 }
