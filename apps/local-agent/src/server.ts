@@ -6,15 +6,17 @@ import {
 import { CodexAdapter } from "@codehands/codex-adapter";
 import { TOOL_DEFINITIONS, getHandler, type ToolContext } from "@codehands/mcp-tools";
 import { WorkspaceValidator, BlockedCommands, normalizeArgv } from "@codehands/policy-engine";
+import { AuditLogger } from "@codehands/audit";
 import type { CodehandsConfig } from "./config.js";
 
 export interface SessionState {
   activeWorkspace: string | null;
 }
 
-export function createServer(config: CodehandsConfig, adapter: CodexAdapter) {
+export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger) {
   const validator = new WorkspaceValidator(config.workspaces);
   const blockedCmds = new BlockedCommands({ extraPatterns: config.blockedCommands });
+  const audit = logger ?? new AuditLogger({ enabled: false });
 
   const sessionState: SessionState = { activeWorkspace: null };
 
@@ -74,17 +76,35 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter) {
       } as const;
     }
 
+    const start = Date.now();
     try {
       const result = await handler((params ?? {}) as Record<string, unknown>, ctx);
       if (name === "workspace_set" && !result.isError) {
         sessionState.activeWorkspace = ctx.activeWorkspace;
       }
+      audit.log({
+        timestamp: new Date().toISOString(),
+        sessionId: "session",
+        tool: name,
+        params: (params ?? {}) as Record<string, unknown>,
+        durationMs: Date.now() - start,
+        success: !result.isError,
+      });
       return {
         content: result.content as Array<{ type: "text"; text: string }>,
         isError: result.isError,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      audit.log({
+        timestamp: new Date().toISOString(),
+        sessionId: "session",
+        tool: name,
+        params: (params ?? {}) as Record<string, unknown>,
+        durationMs: Date.now() - start,
+        success: false,
+        error: message,
+      });
       return {
         content: [{ type: "text", text: `Error: ${message}` }],
         isError: true,

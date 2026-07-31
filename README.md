@@ -160,11 +160,15 @@ Both **ChatGPT** and **Claude Chat** are primary targets.
 ```bash
 git clone https://github.com/YOUR_USERNAME/codehands.git
 cd codehands
+npm install -g @openai/codex
 pnpm install
-npm link
+pnpm run build
+cd apps/local-agent && npm link && cd ../..
+codehands init
 ```
 
 After this, `codehands` is available as a global command from anywhere.
+Edit `~/.codehands/config.json` to add your project paths.
 
 ### Running (every time)
 
@@ -215,7 +219,15 @@ git submodule update --remote vendor/codex
 
 ## Current Status
 
-Scaffolding stage. All decisions confirmed. Implementation has not started.
+**Working.** All 16 MCP tools implemented and tested end-to-end.
+
+```
+codehands start   → Starts server + exec-server on port 3100
+codehands stdio   → stdio mode for Claude Desktop
+codehands init    → Creates default config
+```
+
+See `docs/client-setup.md` for connecting ChatGPT or Claude.
 
 ---
 

@@ -10,6 +10,9 @@ importers:
 
   apps/local-agent:
     dependencies:
+      '@codehands/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@codehands/codex-adapter':
         specifier: workspace:*
         version: link:../../packages/codex-adapter

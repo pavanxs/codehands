@@ -13,6 +13,7 @@
     "start": "node dist/cli.js start"
   },
   "dependencies": {
+    "@codehands/audit": "workspace:*",
     "@codehands/codex-adapter": "workspace:*",
     "@codehands/mcp-tools": "workspace:*",
     "@codehands/policy-engine": "workspace:*",

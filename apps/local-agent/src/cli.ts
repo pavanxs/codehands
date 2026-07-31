@@ -6,6 +6,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { CodexAdapter } from "@codehands/codex-adapter";
+import { AuditLogger } from "@codehands/audit";
 import { loadConfig, initConfig, getConfigPath, type CodehandsConfig } from "./config.js";
 import { createServer } from "./server.js";
 
@@ -117,6 +118,7 @@ async function handlePost(
   }
 
   if (!sessionId && isInitializeRequest(parsed)) {
+    const logger = new AuditLogger();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {
@@ -129,7 +131,7 @@ async function handlePost(
       if (sid) transports.delete(sid);
     };
 
-    const { server } = createServer(config, adapter);
+    const { server } = createServer(config, adapter, logger);
     await server.connect(transport);
     await transport.handleRequest(req, res, parsed);
     return;
