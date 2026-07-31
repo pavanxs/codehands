@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { TOOL_DEFINITIONS } from "./definitions.js";
 
 describe("TOOL_DEFINITIONS", () => {
-  it("has exactly 16 tools", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(16);
+  it("has exactly 17 tools", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(17);
   });
 
   it("all names use only allowed MCP characters [A-Za-z0-9_-.]", () => {

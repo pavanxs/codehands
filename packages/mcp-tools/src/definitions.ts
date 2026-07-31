@@ -235,4 +235,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ["workspace"],
     },
   },
+
+  // --- Utility ---
+  {
+    name: "wait",
+    description: "Wait for a specified duration before continuing. Useful after starting a process that needs time to initialize.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ms: { type: "number", description: "Duration to wait in milliseconds (max 30000)" },
+      },
+      required: ["ms"],
+    },
+    annotations: { readOnlyHint: true },
+  },
 ];

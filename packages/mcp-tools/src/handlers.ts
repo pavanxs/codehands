@@ -242,6 +242,12 @@ const handlers: Record<string, HandlerFn> = {
     ctx.activeWorkspace = found;
     return textResult({ activeWorkspace: found, set: true });
   },
+
+  async wait(params, _ctx) {
+    const ms = Math.max(0, Math.min(30_000, (params["ms"] as number) ?? 1000));
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return textResult({ waited: ms });
+  },
 };
 
 export function getHandler(toolName: string): HandlerFn | undefined {
