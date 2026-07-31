@@ -281,6 +281,29 @@ function runAdd() {
   }
 }
 
+function runConfig() {
+  const configPath = getConfigPath();
+  const platform = process.platform;
+
+  let cmd: string;
+  let cmdArgs: string[];
+
+  if (platform === "win32") {
+    cmd = "cmd.exe";
+    cmdArgs = ["/c", "start", "", configPath];
+  } else if (platform === "darwin") {
+    cmd = "open";
+    cmdArgs = ["-t", configPath];
+  } else {
+    const editor = process.env["EDITOR"] ?? process.env["VISUAL"] ?? "xdg-open";
+    cmd = editor;
+    cmdArgs = [configPath];
+  }
+
+  console.log(`Opening: ${configPath}`);
+  spawn(cmd, cmdArgs, { detached: true, stdio: "ignore" }).unref();
+}
+
 async function main() {
   switch (command) {
     case "start":
@@ -295,6 +318,9 @@ async function main() {
     case "add":
       runAdd();
       break;
+    case "config":
+      runConfig();
+      break;
     default:
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
@@ -304,6 +330,7 @@ async function main() {
       console.log("  codehands stdio                  Run in stdio mode (for Claude Desktop)");
       console.log("  codehands init                   Create default config file");
       console.log("  codehands add <path>             Add a workspace to config");
+      console.log("  codehands config                 Open config in editor");
       console.log("");
       console.log(`Config: ${getConfigPath()}`);
       break;
