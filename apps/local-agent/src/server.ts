@@ -82,6 +82,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
       if (name === "workspace_set" && !result.isError) {
         sessionState.activeWorkspace = ctx.activeWorkspace;
       }
+      const errorText = result.isError ? result.content[0]?.text : undefined;
       audit.log({
         timestamp: new Date().toISOString(),
         sessionId: "session",
@@ -89,6 +90,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
         params: (params ?? {}) as Record<string, unknown>,
         durationMs: Date.now() - start,
         success: !result.isError,
+        error: errorText,
       });
       return {
         content: result.content as Array<{ type: "text"; text: string }>,

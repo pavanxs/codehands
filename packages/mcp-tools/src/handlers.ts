@@ -101,23 +101,27 @@ const handlers: Record<string, HandlerFn> = {
     const cwd = params["cwd"]
       ? ctx.resolvePath(params["cwd"] as string)
       : ctx.activeWorkspace ?? undefined;
-    const env = params["env"] as Record<string, string> | undefined;
+    const customEnv = params["env"] as Record<string, string> | undefined;
     const tty = (params["tty"] as boolean | undefined) ?? false;
 
     if (!cwd) {
       return errorResult("No active workspace. Call workspace_set first or provide cwd.");
     }
 
-    let argv: string[];
-    if (args.length > 0) {
-      argv = [command, ...args];
-    } else {
-      const isWindows = os.platform() === "win32";
-      argv = isWindows
-        ? ["cmd.exe", "/c", command]
-        : ["/bin/sh", "-c", command];
-    }
-    const result = await ctx.adapter.processStart({ argv, cwd: toFileUri(cwd), env: env ?? {}, tty });
+    const isWindows = os.platform() === "win32";
+    const fullCommand = args.length > 0 ? [command, ...args].join(" ") : command;
+    const argv = isWindows
+      ? ["cmd.exe", "/c", fullCommand]
+      : ["/bin/sh", "-c", fullCommand];
+
+    const baseEnv: Record<string, string> = {};
+    if (process.env["PATH"]) baseEnv["PATH"] = process.env["PATH"];
+    if (isWindows && process.env["SystemRoot"]) baseEnv["SystemRoot"] = process.env["SystemRoot"];
+    if (isWindows && process.env["USERPROFILE"]) baseEnv["USERPROFILE"] = process.env["USERPROFILE"];
+    if (process.env["HOME"]) baseEnv["HOME"] = process.env["HOME"];
+
+    const env = { ...baseEnv, ...customEnv };
+    const result = await ctx.adapter.processStart({ argv, cwd: toFileUri(cwd), env, tty });
     return textResult({ processId: result.processId, started: true });
   },
 
