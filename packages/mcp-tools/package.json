@@ -7,10 +7,12 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "check": "tsc --noEmit",
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@codehands/codex-adapter": "workspace:*"
+    "@codehands/codex-adapter": "workspace:*",
+    "@codehands/policy-engine": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

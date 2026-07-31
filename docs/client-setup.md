@@ -1,14 +1,14 @@
-# Connecting AI Clients to CodeHands
+# Connecting MCP clients
 
-## Claude Desktop (Local — stdio mode)
+Run this before connecting a client:
 
-1. Open Claude Desktop settings
-2. Edit `claude_desktop_config.json`:
+```bash
+codehands doctor
+```
 
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-**Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+## Local stdio
 
-3. Add this MCP server entry:
+For a client that can launch a local MCP server:
 
 ```json
 {
@@ -21,58 +21,62 @@
 }
 ```
 
-4. Restart Claude Desktop
-5. CodeHands tools will appear in Claude's tool list
+Restart the client after saving its configuration.
 
-## Claude Desktop (Local — HTTP mode)
+## Authenticated local HTTP
 
-If you prefer HTTP (allows multiple clients):
+Start the server:
 
-1. Start the server: `codehands start`
-2. In Claude Desktop config:
+```bash
+codehands start
+```
 
-```json
-{
-  "mcpServers": {
-    "codehands": {
-      "url": "http://localhost:3100/mcp"
-    }
-  }
+The endpoint is `http://127.0.0.1:3100/mcp`. HTTP clients must read the bearer
+token from `~/.codehands/http-token` and send:
+
+```text
+Authorization: Bearer <token>
+```
+
+Do not paste the token into a chat or commit it to a repository.
+
+Example initialization request:
+
+```bash
+TOKEN="$(cat "$HOME/.codehands/http-token")"
+curl http://127.0.0.1:3100/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
+```
+
+On Windows PowerShell:
+
+```powershell
+$token = (Get-Content "$HOME\.codehands\http-token").Trim()
+$headers = @{
+  Authorization = "Bearer $token"
+  Accept = "application/json, text/event-stream"
 }
 ```
 
-## ChatGPT (Web — Remote via tunnel)
+## ChatGPT web and other cloud MCP clients
 
-ChatGPT's web interface uses Remote MCP, so you need a public URL.
+Do not expose CodeHands directly through Tailscale Funnel, ngrok, or
+Cloudflare Tunnel. Cloud MCP clients generally require an OAuth-compatible
+remote MCP server; CodeHands currently provides a local bearer-protected
+endpoint, not an OAuth authorization server.
 
-1. Start CodeHands: `codehands start`
-2. Expose via tunnel: `tailscale funnel 3100`
-3. In ChatGPT settings → Connected Apps → Add MCP Server:
-   - URL: `https://your-machine.tail12345.ts.net/mcp`
-4. ChatGPT will discover all 16 tools automatically
+See [hosted-gateway.md](hosted-gateway.md) for the required gateway design.
 
-## Any MCP Client (Generic)
+## First tool calls
 
-CodeHands exposes a standard MCP Streamable HTTP endpoint:
+1. Call `workspace_list`.
+2. Call `workspace_set` with an exact returned path or an unambiguous name.
+3. Use relative paths for subsequent file and Git tools.
+4. Pass commands as executable plus argument array, for example
+   `{"command":"npm","args":["test"]}`.
+5. Call `activity_recent` when diagnosing latency or a failure.
 
-- **URL:** `http://localhost:3100/mcp`
-- **Protocol:** MCP 2024-11-05
-- **Transport:** Streamable HTTP (POST for requests, SSE for responses)
-- **Health check:** `GET http://localhost:3100/health`
-
-### Quick test with curl:
-
-```bash
-curl -X POST http://localhost:3100/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
-```
-
-## First Use
-
-After connecting any client, the AI needs to:
-
-1. Call `workspace_list` to see approved projects
-2. Call `workspace_set` to pick a project
-3. Then use any file/process tool with relative paths
+The active workspace and process handles belong only to that MCP session.

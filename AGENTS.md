@@ -77,9 +77,11 @@ server routes each one to the exec-server and returns the result. That's it.
 All harness code lives OUTSIDE `vendor/codex/`. The harness talks to Codex
 ONLY through the exec-server's JSON-RPC interface.
 
-**Why:** OpenAI updates Codex frequently. By keeping it untouched, upgrading is
-just `git submodule update --remote vendor/codex` — zero merge conflicts, zero
-broken patches. If you modify Codex source, upgrades become impossible.
+**Why:** OpenAI updates Codex frequently. The exec-server protocol is
+experimental, so the recorded submodule commit is a compatibility and security
+boundary. Update it deliberately in a dedicated PR, then run contract,
+sandbox, and cross-platform tests. Never use an unreviewed floating
+`git submodule update --remote` in installation or deployment instructions.
 
 ---
 

@@ -1,14 +1,13 @@
-# MCP gateway (hosted mode)
+# MCP OAuth gateway
 
-Hosted access to CodeHands from anywhere (phone, tablet, any browser).
+Reserved for a future reviewed OAuth 2.1/PKCE gateway for browser-hosted MCP
+clients.
 
-In practice, the gateway IS the same HTTP server from `apps/local-agent` — its
-port just gets exposed publicly via a tunnel. This package provides:
-- Tunnel integration and configuration
-- Auth middleware (v2)
-- Connection guides for ChatGPT and Claude Chat
+The local agent must not be exposed directly through Tailscale Funnel, ngrok,
+Cloudflare Tunnel, or a public reverse proxy. Those products can provide HTTPS
+reachability but do not implement the application authorization required here.
 
-Recommended tunnel: Tailscale with Funnel (free, private, no domain).
-Alternatives: Cloudflare Tunnel, ngrok.
+The gateway is not implemented. Until it is, supported transports are stdio
+and bearer-authenticated HTTP on loopback/private infrastructure.
 
-V1 scope. No implementation has been added yet.
+See `docs/hosted-gateway.md` for the minimum security contract.

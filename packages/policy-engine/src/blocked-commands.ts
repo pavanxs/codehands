@@ -22,8 +22,10 @@ export interface BlockedCommandsConfig {
 
 export class BlockedCommands {
   private patterns: RegExp[];
+  private defaultsEnabled: boolean;
 
   constructor(config: BlockedCommandsConfig = {}) {
+    this.defaultsEnabled = !(config.disableDefaults ?? false);
     const base = config.disableDefaults ? [] : DEFAULT_BLOCKED_PATTERNS;
     const extra = (config.extraPatterns ?? []).map((p) => new RegExp(p, "i"));
     this.patterns = [...base, ...extra];
@@ -31,6 +33,19 @@ export class BlockedCommands {
 
   isBlocked(argv: string[]): { blocked: boolean; reason?: string } {
     const commandLine = argv.join(" ");
+    const executable = path.basename((argv[0] ?? "").replace(/\\/g, "/")).toLowerCase();
+    if (this.defaultsEnabled && executable === "rm") {
+      const flags = argv.slice(1).filter((arg) => arg.startsWith("-"));
+      const recursive = flags.some((flag) => flag === "--recursive" || /^-[^-]*r/i.test(flag));
+      const force = flags.some((flag) => flag === "--force" || /^-[^-]*f/i.test(flag));
+      const absoluteTarget = argv.slice(1).some((arg) => !arg.startsWith("-") && path.isAbsolute(arg));
+      if (recursive && force && absoluteTarget) {
+        return {
+          blocked: true,
+          reason: "Command blocked by safety policy: recursive forced removal of an absolute path",
+        };
+      }
+    }
 
     for (const pattern of this.patterns) {
       if (pattern.test(commandLine)) {
@@ -46,10 +61,5 @@ export class BlockedCommands {
 }
 
 export function normalizeArgv(command: string, args: string[] = []): string[] {
-  if (args.length > 0) return [command, ...args];
-
-  const isWindows = process.platform === "win32";
-  const shell = isWindows ? "cmd.exe" : "/bin/sh";
-  const flag = isWindows ? "/c" : "-c";
-  return [shell, flag, command];
+  return [command, ...args];
 }
