@@ -66,10 +66,11 @@ const handlers: Record<string, HandlerFn> = {
 
   async fs_walk(params, ctx) {
     const fsPath = ctx.resolvePath(params["path"] as string);
-    const options: Record<string, unknown> = {};
-    if (params["maxDepth"] !== undefined) {
-      options["maxDepth"] = params["maxDepth"];
-    }
+    const options: Record<string, unknown> = {
+      maxDepth: (params["maxDepth"] as number | undefined) ?? 8,
+      maxDirectories: 10_000,
+      maxEntries: 50_000,
+    };
     const result = await ctx.adapter.fsWalk({ path: toFileUri(fsPath), options });
     return textResult(result);
   },
@@ -116,10 +117,12 @@ const handlers: Record<string, HandlerFn> = {
       : ["/bin/sh", "-c", fullCommand];
 
     const baseEnv: Record<string, string> = {};
-    if (process.env["PATH"]) baseEnv["PATH"] = process.env["PATH"];
-    if (isWindows && process.env["SystemRoot"]) baseEnv["SystemRoot"] = process.env["SystemRoot"];
-    if (isWindows && process.env["USERPROFILE"]) baseEnv["USERPROFILE"] = process.env["USERPROFILE"];
-    if (process.env["HOME"]) baseEnv["HOME"] = process.env["HOME"];
+    const envKeys = isWindows
+      ? ["PATH", "SystemRoot", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATHEXT"]
+      : ["PATH", "HOME", "TMPDIR", "LANG", "SHELL"];
+    for (const key of envKeys) {
+      if (process.env[key]) baseEnv[key] = process.env[key]!;
+    }
 
     const env = { ...baseEnv, ...customEnv };
     const result = await ctx.adapter.processStart({ argv, cwd: toFileUri(cwd), env, tty });

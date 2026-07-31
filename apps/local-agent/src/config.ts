@@ -62,4 +62,35 @@ export function initConfig(): string {
   return configPath;
 }
 
+export function addWorkspace(workspacePath: string): { added: boolean; resolved: string; reason?: string } {
+  const resolved = path.resolve(workspacePath);
+
+  if (!fs.existsSync(resolved)) {
+    return { added: false, resolved, reason: `Path does not exist: ${resolved}` };
+  }
+
+  const stat = fs.statSync(resolved);
+  if (!stat.isDirectory()) {
+    return { added: false, resolved, reason: `Not a directory: ${resolved}` };
+  }
+
+  const configPath = getConfigPath();
+  if (!fs.existsSync(configPath)) {
+    initConfig();
+  }
+
+  const raw = fs.readFileSync(configPath, "utf-8");
+  const config = JSON.parse(raw) as { workspaces: string[]; [key: string]: unknown };
+
+  const normalize = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+  const alreadyExists = config.workspaces.some((w) => normalize(w) === normalize(resolved));
+  if (alreadyExists) {
+    return { added: false, resolved, reason: `Already in config: ${resolved}` };
+  }
+
+  config.workspaces.push(resolved);
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  return { added: true, resolved };
+}
+
 export { getConfigPath };

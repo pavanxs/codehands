@@ -7,7 +7,7 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { randomUUID } from "node:crypto";
 import { CodexAdapter } from "@codehands/codex-adapter";
 import { AuditLogger } from "@codehands/audit";
-import { loadConfig, initConfig, getConfigPath, type CodehandsConfig } from "./config.js";
+import { loadConfig, initConfig, getConfigPath, addWorkspace, type CodehandsConfig } from "./config.js";
 import { createServer } from "./server.js";
 
 const args = process.argv.slice(2);
@@ -198,6 +198,24 @@ async function runInit() {
   console.log(`Edit this file to add your workspaces.`);
 }
 
+function runAdd() {
+  const targetPath = args[1];
+  if (!targetPath) {
+    console.error("Usage: codehands add <path>");
+    console.error("Example: codehands add D:\\projects\\my-app");
+    process.exit(1);
+  }
+
+  const result = addWorkspace(targetPath);
+  if (result.added) {
+    console.log(`Added workspace: ${result.resolved}`);
+    console.log(`(Server will pick it up on next start or reconnect)`);
+  } else {
+    console.error(`Could not add: ${result.reason}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   switch (command) {
     case "start":
@@ -209,6 +227,9 @@ async function main() {
     case "init":
       await runInit();
       break;
+    case "add":
+      runAdd();
+      break;
     default:
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
@@ -216,6 +237,7 @@ async function main() {
       console.log("  codehands start    Start the HTTP MCP server");
       console.log("  codehands stdio    Run in stdio mode (for Claude Desktop)");
       console.log("  codehands init     Create default config file");
+      console.log("  codehands add <path>  Add a workspace to config");
       console.log("");
       console.log(`Config: ${getConfigPath()}`);
       break;
