@@ -8,6 +8,7 @@ export interface ProcessInfo {
   startedAt: string;
   exited: boolean;
   exitCode?: number;
+  sessionId: string;
 }
 
 export interface ToolContext {
@@ -16,6 +17,7 @@ export interface ToolContext {
   workspaces: string[];
   resolvePath: (relativePath: string) => string;
   ownedProcesses: Map<string, ProcessInfo>;
+  sessionId: string;
 }
 
 export interface ToolResult {
@@ -138,6 +140,7 @@ const handlers: Record<string, HandlerFn> = {
       command: fullCommandStr,
       startedAt: new Date().toISOString(),
       exited: false,
+      sessionId: ctx.sessionId,
     });
     return textResult({ processId: result.processId, started: true });
   },
@@ -277,8 +280,9 @@ const handlers: Record<string, HandlerFn> = {
       startedAt: info.startedAt,
       status: info.exited ? "exited" : "running",
       exitCode: info.exitCode,
+      sessionId: info.sessionId,
     }));
-    return textResult({ processes, total: processes.length });
+    return textResult({ processes, total: processes.length, currentSession: ctx.sessionId });
   },
 };
 

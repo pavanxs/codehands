@@ -16,7 +16,7 @@ export interface SessionState {
 
 let globalWorkspace: string | null = null;
 
-export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger) {
+export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger, sessionId?: string) {
   const validator = new WorkspaceValidator(config.workspaces);
   const blockedCmds = new BlockedCommands({ extraPatterns: config.blockedCommands });
   const audit = logger ?? new AuditLogger({ enabled: false });
@@ -53,6 +53,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
       activeWorkspace: sessionState.activeWorkspace,
       workspaces: validator.getWorkspaces(),
       ownedProcesses: sessionState.ownedProcesses,
+      sessionId: sessionId ?? "default",
       resolvePath: (p: string) => {
         const resolved = validator.resolvePath(p, sessionState.activeWorkspace);
         const check = validator.validate(resolved);

@@ -203,8 +203,9 @@ async function handlePost(
 
   if (!sessionId && isInitializeRequest(parsed)) {
     const logger = new AuditLogger();
+    const newSessionId = randomUUID();
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
+      sessionIdGenerator: () => newSessionId,
       onsessioninitialized: (sid) => {
         transports.set(sid, transport);
       },
@@ -215,7 +216,7 @@ async function handlePost(
       if (sid) transports.delete(sid);
     };
 
-    const { server } = createServer(config, adapter, logger);
+    const { server } = createServer(config, adapter, logger, newSessionId);
     await server.connect(transport);
     await transport.handleRequest(req, res, parsed);
     return;
