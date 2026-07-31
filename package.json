@@ -1,0 +1,16 @@
+{
+  "name": "mcp-coding-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A thin, policy-controlled MCP bridge over OpenAI Codex CLI.",
+  "packageManager": "pnpm@10.10.0",
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "check": "pnpm --recursive run check",
+    "test": "pnpm --recursive run test",
+    "dev:agent": "pnpm --filter @mcp-harness/local-agent dev"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
