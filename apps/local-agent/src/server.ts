@@ -123,5 +123,5 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
     }
   });
 
-  return { server };
+  return { server, validator };
 }

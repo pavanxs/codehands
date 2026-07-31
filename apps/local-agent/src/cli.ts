@@ -6,6 +6,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
 import { CodexAdapter } from "@codehands/codex-adapter";
 import { AuditLogger } from "@codehands/audit";
 import { loadConfig, initConfig, getConfigPath, addWorkspace, type CodehandsConfig } from "./config.js";
@@ -73,13 +74,31 @@ function startTailscaleFunnel(port: number): ChildProcess | null {
 }
 
 async function runStart() {
-  const config = loadConfig();
+  let config = loadConfig();
 
   if (config.workspaces.length === 0) {
     console.log(`⚠  No workspaces configured.`);
     console.log(`   Add project paths to: ${getConfigPath()}`);
     console.log(`   Example: { "workspaces": ["C:/Users/you/projects/my-app"] }`);
     console.log("");
+  }
+
+  const configPath = getConfigPath();
+  if (fs.existsSync(configPath)) {
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    fs.watch(configPath, () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        try {
+          const updated = loadConfig();
+          const added = updated.workspaces.filter((w) => !config.workspaces.includes(w));
+          const removed = config.workspaces.filter((w) => !updated.workspaces.includes(w));
+          config = updated;
+          if (added.length > 0) console.log(`Config reloaded: +${added.length} workspace(s): ${added.join(", ")}`);
+          if (removed.length > 0) console.log(`Config reloaded: -${removed.length} workspace(s): ${removed.join(", ")}`);
+        } catch { /* ignore parse errors during editing */ }
+      }, 300);
+    });
   }
 
   const adapter = new CodexAdapter({ codexBinary: config.codexBinary });
