@@ -443,16 +443,19 @@ function runCapabilityUrl() {
 
   const input = args[1];
   if (!input) {
-    throw new Error("Provide the Funnel hostname, for example: codehands capability-url machine.tail1234.ts.net");
+    throw new Error(
+      "Provide the Funnel host or mount URL, for example: codehands capability-url https://machine.tail1234.ts.net/codehands",
+    );
   }
   const origin = new URL(input.includes("://") ? input : `https://${input}`);
-  if (origin.protocol !== "https:" || origin.pathname !== "/" || origin.search || origin.hash) {
-    throw new Error("Capability URL host must be an HTTPS origin or hostname without a path, query, or fragment");
+  if (origin.protocol !== "https:" || origin.search || origin.hash) {
+    throw new Error("Capability URL base must use HTTPS and must not contain a query or fragment");
   }
   if (!config.allowedHosts.some((host) => host.toLowerCase() === origin.hostname.toLowerCase())) {
     throw new Error(`Add ${JSON.stringify(origin.hostname)} to allowedHosts in ${getConfigPath()} first`);
   }
-  console.log(`${origin.origin}/${config.capabilityToken}/mcp`);
+  const mountPath = origin.pathname.replace(/\/+$/, "");
+  console.log(`${origin.origin}${mountPath}/${config.capabilityToken}/mcp`);
 }
 
 function runRotateCapability() {

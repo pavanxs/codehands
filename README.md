@@ -150,7 +150,7 @@ codehands doctor    Verify config, exec-server compatibility, and sandboxing
 codehands start     Start authenticated Streamable HTTP on loopback
 codehands stdio     Run as a stdio MCP server
 codehands logs -f   Follow sanitized tool activity
-codehands capability-url <host>  Print the secret HTTPS MCP URL
+codehands capability-url <host-or-mount-url>  Print the secret HTTPS MCP URL
 codehands rotate-capability      Replace a disclosed capability token
 ```
 

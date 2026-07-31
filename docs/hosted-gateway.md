@@ -46,8 +46,8 @@ Use the exact Funnel hostname, then start CodeHands and Funnel:
 ```bash
 codehands doctor
 codehands start
-tailscale funnel --bg 3100
-codehands capability-url machine.tail1234.ts.net
+tailscale funnel --bg --set-path /codehands 3100
+codehands capability-url https://machine.tail1234.ts.net/codehands
 ```
 
 Add the printed HTTPS URL to the ChatGPT app definition. Do not add an
