@@ -62,6 +62,7 @@ export class ExecServerManager extends EventEmitter {
       const child = spawn(this.codexBinary, ["exec-server", "--listen", this.listenMode], {
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...globalThis.process.env },
+        shell: globalThis.process.platform === "win32",
       });
 
       this.process = child;
