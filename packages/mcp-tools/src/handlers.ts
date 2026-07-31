@@ -8,6 +8,7 @@ export interface ToolContext {
   activeWorkspace: string | null;
   workspaces: string[];
   resolvePath: (relativePath: string) => string;
+  ownedProcesses: Set<string>;
 }
 
 export interface ToolResult {
@@ -122,12 +123,15 @@ const handlers: Record<string, HandlerFn> = {
 
     const env = { ...baseEnv, ...customEnv };
     const result = await ctx.adapter.processStart({ argv, cwd: toFileUri(cwd), env, tty });
+    ctx.ownedProcesses.add(result.processId);
     return textResult({ processId: result.processId, started: true });
   },
 
   async process_read(params, ctx) {
-    void ctx;
     const processId = params["processId"] as string;
+    if (!ctx.ownedProcesses.has(processId)) {
+      return errorResult(`Process "${processId}" does not belong to this session`);
+    }
     const afterSeq = params["afterSeq"] as number | undefined;
     const waitMs = params["waitMs"] as number | undefined;
     const result = await ctx.adapter.processRead({ processId, afterSeq, waitMs });
@@ -147,6 +151,9 @@ const handlers: Record<string, HandlerFn> = {
 
   async process_write(params, ctx) {
     const processId = params["processId"] as string;
+    if (!ctx.ownedProcesses.has(processId)) {
+      return errorResult(`Process "${processId}" does not belong to this session`);
+    }
     const input = params["input"] as string;
     const chunk = Buffer.from(input, "utf-8").toString("base64");
     const writeId = `w-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -156,12 +163,19 @@ const handlers: Record<string, HandlerFn> = {
 
   async process_terminate(params, ctx) {
     const processId = params["processId"] as string;
+    if (!ctx.ownedProcesses.has(processId)) {
+      return errorResult(`Process "${processId}" does not belong to this session`);
+    }
     const result = await ctx.adapter.processTerminate({ processId });
+    ctx.ownedProcesses.delete(processId);
     return textResult({ processId, wasRunning: result.running });
   },
 
   async process_signal(params, ctx) {
     const processId = params["processId"] as string;
+    if (!ctx.ownedProcesses.has(processId)) {
+      return errorResult(`Process "${processId}" does not belong to this session`);
+    }
     const signal = (params["signal"] as "interrupt" | undefined) ?? "interrupt";
     await ctx.adapter.processSignal({ processId, signal });
     return textResult({ processId, signalSent: signal });

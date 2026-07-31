@@ -11,6 +11,7 @@ import type { CodehandsConfig } from "./config.js";
 
 export interface SessionState {
   activeWorkspace: string | null;
+  ownedProcesses: Set<string>;
 }
 
 let globalWorkspace: string | null = null;
@@ -24,7 +25,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
     globalWorkspace = validator.getWorkspaces()[0] ?? null;
   }
 
-  const sessionState: SessionState = { activeWorkspace: globalWorkspace };
+  const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: new Set() };
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
@@ -51,6 +52,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
       adapter,
       activeWorkspace: sessionState.activeWorkspace,
       workspaces: validator.getWorkspaces(),
+      ownedProcesses: sessionState.ownedProcesses,
       resolvePath: (p: string) => {
         const resolved = validator.resolvePath(p, sessionState.activeWorkspace);
         const check = validator.validate(resolved);
