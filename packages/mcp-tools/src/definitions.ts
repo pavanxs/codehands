@@ -260,26 +260,24 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "batch",
-    description: "Run multiple tools in one request. Each call has a tool name and args (JSON string). Example: [{\"tool\":\"fs_readFile\",\"args\":\"{\\\"path\\\":\\\"src/index.ts\\\"}\"},{\"tool\":\"fs_readFile\",\"args\":\"{\\\"path\\\":\\\"package.json\\\"}\"}]",
+    description: "Run multiple tools in one request, all in parallel. Returns all results together. Use to avoid round-trip overhead.",
     inputSchema: {
       type: "object",
       properties: {
         calls: {
           type: "array",
-          description: "Tool calls to run in parallel",
+          description: "Array of tool calls to execute in parallel",
           items: {
             type: "object",
             properties: {
-              tool: { type: "string", description: "Tool name" },
-              args: { type: "string", description: "JSON-encoded arguments for the tool" },
+              tool: { type: "string", description: "Tool name (e.g. fs_readFile, process_start)" },
+              args: { type: "object", description: "Arguments for the tool" },
             },
             required: ["tool", "args"],
-            additionalProperties: false,
           },
         },
       },
       required: ["calls"],
-      additionalProperties: false,
     },
   },
 ];
