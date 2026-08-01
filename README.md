@@ -229,6 +229,11 @@ codehands init    → Creates default config
 
 See `docs/client-setup.md` for connecting ChatGPT or Claude.
 
+When updating the ChatGPT development plugin, use the exact
+[`ChatGPT Plugin Update Runbook`](docs/chatgpt-plugin-update-runbook.md). It
+covers rebuilding, restarting, **Manage → Refresh**, fresh-chat verification,
+and the last-resort uninstall/reinstall procedure.
+
 ---
 
 ## Key Design Rules
@@ -242,8 +247,9 @@ See `docs/client-setup.md` for connecting ChatGPT or Claude.
    app."
 5. **Provider-neutral.** Tool schemas work identically for ChatGPT and Claude.
 6. **Lightweight.** Minimal RAM usage, lean process. No bloat.
-7. **No UI.** This is a headless server. Users already have editors. No
-   dashboards, no electron apps, no windows.
+7. **No standalone UI.** This is a headless server. No dashboards, Electron
+   apps, or separate windows; the inline MCP Apps activity component only
+   exposes tool-call status inside the host conversation.
 8. **Low latency.** Responses must be near-instant. This is why local-first
    matters.
 9. **Simple UX.** Easy to set up, easy to use. Avoid complexity wherever
