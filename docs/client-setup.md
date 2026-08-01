@@ -45,11 +45,20 @@ If you prefer HTTP (allows multiple clients):
 
 ChatGPT's web interface uses Remote MCP, so you need a public URL.
 
-1. Start CodeHands: `codehands start`
-2. Expose via tunnel: `tailscale funnel 3100`
-3. In ChatGPT settings → Connected Apps → Add MCP Server:
-   - URL: `https://your-machine.tail12345.ts.net/mcp`
-4. ChatGPT will discover all 16 tools automatically
+1. Start CodeHands with its tunnel:
+   `codehands start --tunnel tailscale`
+2. In ChatGPT, open **Plugins → Create app**.
+3. Enter a name, select **Server URL**, and use:
+   `https://your-machine.tail12345.ts.net/mcp`
+4. Select no authentication, acknowledge the custom-server warning, and
+   select **Create**.
+5. ChatGPT will discover the current 18 tools automatically (19 when CodeHands
+   is started with `--batch`).
+
+For subsequent code or tool-metadata changes, do not recreate the app. Follow
+the [`ChatGPT Plugin Update Runbook`](chatgpt-plugin-update-runbook.md) to
+rebuild, restart, refresh the existing development registration, and verify it
+in a fresh Chat conversation.
 
 ## Any MCP Client (Generic)
 

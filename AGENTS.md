@@ -105,8 +105,10 @@ broken patches. If you modify Codex source, upgrades become impossible.
    frameworks, no unnecessary dependencies. If something can be done simply,
    do it simply.
 
-7. **No UI.** This is a headless server process. Do not build dashboards,
-   configuration GUIs, or visual interfaces. Users already have editors.
+7. **No standalone UI.** This is a headless server process. Do not build
+   dashboards, configuration GUIs, or separate windows. The small inline MCP
+   Apps activity component may surface CodeHands tool-call status inside the
+   host conversation; it must not become an administration dashboard.
 
 8. **Low latency.** Every tool call must respond near-instantly. Avoid
    unnecessary overhead, extra process spawns, or slow abstractions.
@@ -155,7 +157,7 @@ mcp-coding-harness/
 - Error recovery: auto-restart exec-server up to 3 times, notify connected AIs
 - Distribution: GitHub clone + npm link (global `codehands` command, git pull to update)
 - API key: none needed (exec-server is purely local)
-- UI: none (headless server)
+- UI: headless server plus a small inline MCP Apps activity component
 
 ---
 
@@ -165,3 +167,14 @@ mcp-coding-harness/
 - Never put it in `vendor/codex/`.
 - Follow the existing TypeScript config (`tsconfig.base.json`).
 - Keep tools atomic and provider-neutral.
+
+## Required: Reloading the ChatGPT Development Plugin
+
+After changing CodeHands server code, MCP metadata, or ChatGPT UI resources,
+follow [`docs/chatgpt-plugin-update-runbook.md`](docs/chatgpt-plugin-update-runbook.md).
+
+The normal path is **build → restart CodeHands → verify local/public endpoints
+→ ChatGPT Plugin actions → Manage → Refresh → test in a new Chat**. Do not
+uninstall and recreate the plugin for ordinary updates, and do not test a
+refresh in an existing conversation because it may retain old metadata and UI
+resources.
