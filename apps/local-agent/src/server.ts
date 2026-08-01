@@ -41,17 +41,17 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const visibleTools = TOOL_DEFINITIONS.filter((def) => !hiddenTools.has(def.name));
     return {
-      tools: TOOL_DEFINITIONS
-        .filter((def) => !hiddenTools.has(def.name))
-        .map((def) => ({
-          name: def.name,
-          description: def.description,
-          inputSchema: {
-            type: "object" as const,
-            ...def.inputSchema,
-          },
-        })),
+      tools: visibleTools.map((def) => ({
+        name: def.name,
+        description: def.description,
+        inputSchema: {
+          type: "object" as const,
+          additionalProperties: false,
+          ...def.inputSchema,
+        },
+      })),
     };
   });
 

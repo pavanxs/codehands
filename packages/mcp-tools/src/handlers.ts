@@ -287,16 +287,16 @@ const handlers: Record<string, HandlerFn> = {
   },
 
   async batch(params, ctx) {
-    const calls = params["calls"] as Array<{ tool: string; args: Record<string, unknown> }>;
-    if (!calls || !Array.isArray(calls) || calls.length === 0) {
+    const rawCalls = params["calls"] as Array<{ tool: string; args: string | Record<string, unknown> }>;
+    if (!rawCalls || !Array.isArray(rawCalls) || rawCalls.length === 0) {
       return errorResult("batch requires a non-empty 'calls' array");
     }
-    if (calls.length > 20) {
+    if (rawCalls.length > 20) {
       return errorResult("batch limited to 20 calls per request");
     }
 
     const results = await Promise.all(
-      calls.map(async (call, index) => {
+      rawCalls.map(async (call, index) => {
         const handler = handlers[call.tool];
         if (!handler) {
           return { index, tool: call.tool, success: false, error: `Unknown tool: ${call.tool}` };
@@ -304,16 +304,24 @@ const handlers: Record<string, HandlerFn> = {
         if (call.tool === "batch") {
           return { index, tool: call.tool, success: false, error: "Cannot nest batch calls" };
         }
+
+        let parsedArgs: Record<string, unknown>;
+        if (typeof call.args === "string") {
+          try { parsedArgs = JSON.parse(call.args); } catch { return { index, tool: call.tool, success: false, error: "Invalid JSON in args" }; }
+        } else {
+          parsedArgs = call.args ?? {};
+        }
+
         if (call.tool === "process_start" && ctx.checkBlocked) {
-          const cmd = (call.args?.command as string) ?? "";
-          const cmdArgs = (call.args?.args as string[]) ?? [];
+          const cmd = (parsedArgs.command as string) ?? "";
+          const cmdArgs = (parsedArgs.args as string[]) ?? [];
           const blocked = ctx.checkBlocked(cmd, cmdArgs);
           if (blocked) {
             return { index, tool: call.tool, success: false, error: blocked };
           }
         }
         try {
-          const result = await handler(call.args ?? {}, ctx);
+          const result = await handler(parsedArgs, ctx);
           const text = result.content[0]?.text ?? "";
           let data: unknown;
           try { data = JSON.parse(text); } catch { data = text; }
