@@ -105,10 +105,10 @@ broken patches. If you modify Codex source, upgrades become impossible.
    frameworks, no unnecessary dependencies. If something can be done simply,
    do it simply.
 
-7. **No standalone UI.** This is a headless server process. Do not build
-   dashboards, configuration GUIs, or separate windows. The small inline MCP
-   Apps activity component may surface CodeHands tool-call status inside the
-   host conversation; it must not become an administration dashboard.
+7. **No UI resources.** This is a headless server process. Do not publish MCP
+   Apps resource URIs or output templates: loading CodeHands widgets has made
+   mobile ChatGPT conversations unstable. Native host tool-status labels are
+   allowed, but tools must remain fully useful without a custom iframe.
 
 8. **Low latency.** Every tool call must respond near-instantly. Avoid
    unnecessary overhead, extra process spawns, or slow abstractions.
@@ -157,7 +157,7 @@ mcp-coding-harness/
 - Error recovery: auto-restart exec-server up to 3 times, notify connected AIs
 - Distribution: GitHub clone + npm link (global `codehands` command, git pull to update)
 - API key: none needed (exec-server is purely local)
-- UI: headless server plus a small inline MCP Apps activity component
+- UI: none; hosts may show their native tool-status labels
 
 ---
 
@@ -184,11 +184,10 @@ mcp-coding-harness/
 
 ## Required: Reloading the ChatGPT Development Plugin
 
-After changing CodeHands server code, MCP metadata, or ChatGPT UI resources,
+After changing CodeHands server code or MCP metadata,
 follow [`docs/chatgpt-plugin-update-runbook.md`](docs/chatgpt-plugin-update-runbook.md).
 
 The normal path is **build → restart CodeHands → verify local/public endpoints
 → ChatGPT Plugin actions → Manage → Refresh → test in a new Chat**. Do not
 uninstall and recreate the plugin for ordinary updates, and do not test a
-refresh in an existing conversation because it may retain old metadata and UI
-resources.
+refresh in an existing conversation because it may retain old metadata.

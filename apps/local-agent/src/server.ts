@@ -1,9 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
-  ListResourcesRequestSchema,
   ListToolsRequestSchema,
-  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { CodexAdapter } from "@codehands/codex-adapter";
 import { TOOL_DEFINITIONS, getHandler, type ToolContext, type ProcessInfo } from "@codehands/mcp-tools";
@@ -12,12 +10,9 @@ import { AuditLogger } from "@codehands/audit";
 import type { CodehandsConfig } from "./config.js";
 import {
   CODEHANDS_ACTIVITY_OUTPUT_SCHEMA,
-  activityResourceUri,
   activityTitle,
   createActivityPayload,
   invocationLabels,
-  matchesActivityResourceUri,
-  renderActivityWidget,
 } from "./activity-ui.js";
 
 export interface SessionState {
@@ -30,6 +25,33 @@ const globalProcesses: Map<string, ProcessInfo> = new Map();
 
 export interface ServerFeatures {
   batch?: boolean;
+}
+
+export function createToolDescriptor(def: (typeof TOOL_DEFINITIONS)[number]) {
+  return {
+    name: def.name,
+    title: activityTitle(def.name),
+    description: def.description,
+    inputSchema: {
+      type: "object" as const,
+      additionalProperties: false,
+      ...def.inputSchema,
+    },
+    outputSchema: CODEHANDS_ACTIVITY_OUTPUT_SCHEMA,
+    annotations: {
+      readOnlyHint: def.annotations?.readOnlyHint ?? false,
+      destructiveHint: def.annotations?.destructiveHint ?? false,
+      openWorldHint: def.name === "http_request" || def.name === "process_start",
+    },
+    _meta: {
+      // Keep native host status labels, but deliberately do not publish a UI
+      // resource URI/output template. A widget-side mobile check happens only
+      // after the host has instantiated the iframe, which is too late to
+      // protect mobile ChatGPT clients that crash while loading that iframe.
+      "openai/toolInvocation/invoking": invocationLabels(def.name).invoking,
+      "openai/toolInvocation/invoked": invocationLabels(def.name).invoked,
+    },
+  };
 }
 
 export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger, sessionId?: string, features?: ServerFeatures) {
@@ -48,68 +70,13 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
-    { capabilities: { tools: {}, resources: {} } },
+    { capabilities: { tools: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const visibleTools = TOOL_DEFINITIONS.filter((def) => !hiddenTools.has(def.name));
     return {
-      tools: visibleTools.map((def) => ({
-        name: def.name,
-        title: activityTitle(def.name),
-        description: def.description,
-        inputSchema: {
-          type: "object" as const,
-          additionalProperties: false,
-          ...def.inputSchema,
-        },
-        outputSchema: CODEHANDS_ACTIVITY_OUTPUT_SCHEMA,
-        annotations: {
-          readOnlyHint: def.annotations?.readOnlyHint ?? false,
-          destructiveHint: def.annotations?.destructiveHint ?? false,
-          openWorldHint: def.name === "http_request" || def.name === "process_start",
-        },
-        _meta: {
-          ui: { resourceUri: activityResourceUri(def.name) },
-          "openai/outputTemplate": activityResourceUri(def.name),
-          "openai/toolInvocation/invoking": invocationLabels(def.name).invoking,
-          "openai/toolInvocation/invoked": invocationLabels(def.name).invoked,
-        },
-      })),
-    };
-  });
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    const visibleTools = TOOL_DEFINITIONS.filter((def) => !hiddenTools.has(def.name));
-    return {
-      resources: visibleTools.map((def) => ({
-        uri: activityResourceUri(def.name),
-        name: `${activityTitle(def.name)} activity`,
-        description: `Inline progress and result details for the ${def.name} CodeHands tool.`,
-        mimeType: "text/html;profile=mcp-app",
-      })),
-    };
-  });
-
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const visibleTools = TOOL_DEFINITIONS.filter((def) => !hiddenTools.has(def.name));
-    const definition = visibleTools.find((def) => matchesActivityResourceUri(request.params.uri, def.name));
-    if (!definition) throw new Error(`Unknown activity resource: ${request.params.uri}`);
-
-    return {
-      contents: [{
-        uri: request.params.uri,
-        mimeType: "text/html;profile=mcp-app",
-        text: renderActivityWidget(definition.name),
-        _meta: {
-          ui: {
-            prefersBorder: false,
-            csp: { connectDomains: [], resourceDomains: [] },
-          },
-          "openai/widgetPrefersBorder": false,
-          "openai/widgetCSP": { connect_domains: [], resource_domains: [] },
-        },
-      }],
+      tools: visibleTools.map(createToolDescriptor),
     };
   });
 

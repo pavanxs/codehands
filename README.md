@@ -247,9 +247,9 @@ and the last-resort uninstall/reinstall procedure.
    app."
 5. **Provider-neutral.** Tool schemas work identically for ChatGPT and Claude.
 6. **Lightweight.** Minimal RAM usage, lean process. No bloat.
-7. **No standalone UI.** This is a headless server. No dashboards, Electron
-   apps, or separate windows; the inline MCP Apps activity component only
-   exposes tool-call status inside the host conversation.
+7. **No custom UI resources.** This is a headless server. CodeHands deliberately
+   does not publish MCP Apps widgets because the iframe path is unstable in
+   mobile ChatGPT; hosts can still show their native tool-call status.
 8. **Low latency.** Responses must be near-instant. This is why local-first
    matters.
 9. **Simple UX.** Easy to set up, easy to use. Avoid complexity wherever

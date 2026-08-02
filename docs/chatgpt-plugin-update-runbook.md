@@ -1,7 +1,6 @@
 # ChatGPT Plugin Update Runbook
 
-Use this runbook whenever CodeHands code, MCP tool metadata, or the inline
-ChatGPT component changes.
+Use this runbook whenever CodeHands code or MCP tool metadata changes.
 
 ## The short answer
 
@@ -14,8 +13,8 @@ Updating the existing development plugin is deterministic. The normal loop is:
 5. Start a **new Chat conversation** from **Try in chat** and run a smoke test.
 
 Do **not** uninstall and recreate the plugin for an ordinary code update.
-Existing conversations can retain old tool metadata and UI resources, so they
-are not a valid refresh test.
+Existing conversations can retain old tool metadata, so they are not a valid
+refresh test.
 
 ## Current George's Mac registration
 
@@ -121,11 +120,12 @@ endpoint.
 4. Select **Refresh**.
 5. Wait until the scan finishes and the **Refresh** button becomes enabled
    again.
-6. Confirm that the expected tools and UI output templates are listed. With the
-   current `--batch` startup there are 19 CodeHands tools.
+6. Confirm that the expected tools are listed and that none advertises a UI
+   resource or output template. With the current `--batch` startup there are 19
+   CodeHands tools.
 
 Use Refresh after every server code update. It is cheap, and it removes any
-guesswork about whether ChatGPT rescanned the MCP metadata and UI resources.
+guesswork about whether ChatGPT rescanned the MCP metadata.
 
 ### 6. Test only in a fresh Chat conversation
 
@@ -143,13 +143,11 @@ approved workspace path returned by the tool; do not infer it.
 Success means:
 
 - the request appears in `~/.codehands/logs/YYYY-MM-DD.jsonl`;
-- ChatGPT shows the inline CodeHands activity row;
-- the row finishes with the correct tool name and status; and
+- ChatGPT does not create a custom CodeHands widget or iframe; and
 - ChatGPT quotes the exact workspace path returned in the tool result.
 
-A green `succeeded` activity row by itself is **not** success. If ChatGPT cannot
-see and quote the workspace path, the model-visible `structuredContent` payload
-is broken even when the activity UI works.
+If ChatGPT cannot see and quote the workspace path, the model-visible
+`structuredContent` payload is broken even when the underlying call succeeds.
 
 The **Work** surface has intermittently failed to attach development plugins
 even when the MCP endpoint is healthy. Do not use a Work failure as proof that
@@ -179,7 +177,8 @@ Use this only when all normal steps above succeeded and one of these is true:
      `https://georges-macbook-pro-2.tail1dd25c.ts.net/mcp`
    - **Authentication:** no authentication
 6. Acknowledge the custom-MCP-server warning and select **Create**.
-7. Wait for discovery to finish and inspect the discovered tools and resources.
+7. Wait for discovery to finish and inspect the discovered tools. CodeHands
+   should not advertise custom UI resources.
 8. Use **Try in chat → Chat** and run the `workspace_list` smoke test above.
 9. Replace the app ID in this runbook with the newly assigned ID.
 
