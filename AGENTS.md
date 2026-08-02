@@ -168,6 +168,20 @@ mcp-coding-harness/
 - Follow the existing TypeScript config (`tsconfig.base.json`).
 - Keep tools atomic and provider-neutral.
 
+## Required: Prefer Permanent Fixes Over Workarounds
+
+- Find and fix the owning root cause rather than routing around it.
+- Do not ask the user to perform a manual step that CodeHands should reasonably
+  support itself. Improve the product or policy so the same task works next time.
+- Do not bypass safety controls. Replace false-positive blanket blocks with
+  narrow, verifiable safe paths while keeping genuinely destructive operations
+  protected.
+- A temporary mitigation is allowed only when a permanent repair cannot be made
+  in the current task. Label it clearly, explain why it is temporary, and leave
+  a tracked removal plan.
+- Before finishing, check whether the same root cause affects nearby flows and
+  add regression coverage so the problem does not return in a different form.
+
 ## Required: Reloading the ChatGPT Development Plugin
 
 After changing CodeHands server code, MCP metadata, or ChatGPT UI resources,

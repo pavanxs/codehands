@@ -121,10 +121,15 @@ const handlers: Record<string, HandlerFn> = {
     }
 
     const isWindows = os.platform() === "win32";
-    const fullCommand = args.length > 0 ? [command, ...args].join(" ") : command;
-    const argv = isWindows
-      ? ["cmd.exe", "/c", fullCommand]
-      : ["/bin/sh", "-c", fullCommand];
+    // When arguments are supplied separately, pass them directly to the
+    // executor. Rebuilding a shell command string loses argument boundaries,
+    // breaks values containing spaces, and creates avoidable injection risk.
+    // Keep shell parsing only for the legacy single-string form.
+    const argv = args.length > 0
+      ? [command, ...args]
+      : isWindows
+        ? ["cmd.exe", "/c", command]
+        : ["/bin/sh", "-c", command];
 
     const baseEnv: Record<string, string> = {};
     const envKeys = isWindows

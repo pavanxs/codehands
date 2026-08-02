@@ -1,5 +1,11 @@
 import * as path from "node:path";
 
+const GIT_FORCE_PATTERNS: RegExp[] = [
+  /\bgit\s+push\s+.*--force\b/i,
+  /\bgit\s+push\s+-f\b/i,
+  /\bgit\s+push\b.*(?:^|\s)\+\S+/i,
+];
+
 const DEFAULT_BLOCKED_PATTERNS: RegExp[] = [
   // ── Destructive file operations ──
   /\brm\s+(-\w*\s+)*-rf?\s+[/\\]/i,
@@ -64,8 +70,7 @@ const DEFAULT_BLOCKED_PATTERNS: RegExp[] = [
   /\byum\s+(remove|erase)\b/i,
 
   // ── Git force operations on remote ──
-  /\bgit\s+push\s+.*--force\b/i,
-  /\bgit\s+push\s+-f\b/i,
+  ...GIT_FORCE_PATTERNS,
 
   // ── Docker system-level access ──
   /\bdocker\s+rm\s+-f\s+\$\(docker\s+ps/i,
@@ -77,6 +82,26 @@ const DEFAULT_BLOCKED_PATTERNS: RegExp[] = [
   /\bcryptominer\b/i,
   /\bcoinhive\b/i,
 ];
+
+
+function isSafeExplicitForceWithLease(commandLine: string): boolean {
+  const tokens = commandLine.trim().split(/\s+/);
+  const gitIndex = tokens.findIndex((token) => token === "git" || token.endsWith("/git"));
+  if (gitIndex < 0 || tokens[gitIndex + 1] !== "push") return false;
+
+  const leases = tokens.filter((token) => token.startsWith("--force-with-lease="));
+  if (leases.length !== 1) return false;
+
+  const lease = leases[0]!.slice("--force-with-lease=".length);
+  if (!/^refs\/heads\/[A-Za-z0-9._/-]+:[0-9a-f]{40}$/i.test(lease)) return false;
+
+  return !tokens.some((token) =>
+    token === "--force"
+    || token === "-f"
+    || token === "--force-with-lease"
+    || token.startsWith("+")
+  );
+}
 
 export interface BlockedCommandsConfig {
   extraPatterns?: string[];
@@ -95,7 +120,10 @@ export class BlockedCommands {
   isBlocked(argv: string[]): { blocked: boolean; reason?: string } {
     const commandLine = argv.join(" ");
 
+    const safeExplicitLease = isSafeExplicitForceWithLease(commandLine);
+
     for (const pattern of this.patterns) {
+      if (safeExplicitLease && GIT_FORCE_PATTERNS.includes(pattern)) continue;
       if (pattern.test(commandLine)) {
         return {
           blocked: true,
