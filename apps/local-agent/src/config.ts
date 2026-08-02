@@ -7,6 +7,9 @@ export interface CodehandsConfig {
   port: number;
   blockedCommands?: string[];
   codexBinary?: string;
+  allowShell?: boolean;
+  testCommands?: Record<string, { command: string; args?: string[]; cwd?: string }>;
+  agentModels?: string[];
 }
 
 const DEFAULT_CONFIG: CodehandsConfig = {
@@ -37,6 +40,9 @@ export function loadConfig(): CodehandsConfig {
     port: parsed.port ?? 3100,
     blockedCommands: parsed.blockedCommands,
     codexBinary: parsed.codexBinary,
+    allowShell: parsed.allowShell ?? false,
+    testCommands: parsed.testCommands,
+    agentModels: parsed.agentModels,
   };
 }
 
@@ -56,6 +62,9 @@ export function initConfig(): string {
     workspaces: [],
     port: 3100,
     blockedCommands: [],
+    allowShell: false,
+    testCommands: {},
+    agentModels: [],
   };
 
   fs.writeFileSync(configPath, JSON.stringify(defaultContent, null, 2) + "\n", "utf-8");

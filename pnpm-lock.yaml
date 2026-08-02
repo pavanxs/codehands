@@ -60,6 +60,9 @@ importers:
       '@codehands/codex-adapter':
         specifier: workspace:*
         version: link:../codex-adapter
+      '@codehands/policy-engine':
+        specifier: workspace:*
+        version: link:../policy-engine
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
