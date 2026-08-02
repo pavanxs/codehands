@@ -105,8 +105,10 @@ broken patches. If you modify Codex source, upgrades become impossible.
    frameworks, no unnecessary dependencies. If something can be done simply,
    do it simply.
 
-7. **No UI.** This is a headless server process. Do not build dashboards,
-   configuration GUIs, or visual interfaces. Users already have editors.
+7. **No UI resources.** This is a headless server process. Do not publish MCP
+   Apps resource URIs or output templates: loading CodeHands widgets has made
+   mobile ChatGPT conversations unstable. Native host tool-status labels are
+   allowed, but tools must remain fully useful without a custom iframe.
 
 8. **Low latency.** Every tool call must respond near-instantly. Avoid
    unnecessary overhead, extra process spawns, or slow abstractions.
@@ -155,7 +157,7 @@ mcp-coding-harness/
 - Error recovery: auto-restart exec-server up to 3 times, notify connected AIs
 - Distribution: GitHub clone + npm link (global `codehands` command, git pull to update)
 - API key: none needed (exec-server is purely local)
-- UI: none (headless server)
+- UI: none; hosts may show their native tool-status labels
 
 ---
 
@@ -165,3 +167,27 @@ mcp-coding-harness/
 - Never put it in `vendor/codex/`.
 - Follow the existing TypeScript config (`tsconfig.base.json`).
 - Keep tools atomic and provider-neutral.
+
+## Required: Prefer Permanent Fixes Over Workarounds
+
+- Find and fix the owning root cause rather than routing around it.
+- Do not ask the user to perform a manual step that CodeHands should reasonably
+  support itself. Improve the product or policy so the same task works next time.
+- Do not bypass safety controls. Replace false-positive blanket blocks with
+  narrow, verifiable safe paths while keeping genuinely destructive operations
+  protected.
+- A temporary mitigation is allowed only when a permanent repair cannot be made
+  in the current task. Label it clearly, explain why it is temporary, and leave
+  a tracked removal plan.
+- Before finishing, check whether the same root cause affects nearby flows and
+  add regression coverage so the problem does not return in a different form.
+
+## Required: Reloading the ChatGPT Development Plugin
+
+After changing CodeHands server code or MCP metadata,
+follow [`docs/chatgpt-plugin-update-runbook.md`](docs/chatgpt-plugin-update-runbook.md).
+
+The normal path is **build → restart CodeHands → verify local/public endpoints
+→ ChatGPT Plugin actions → Manage → Refresh → test in a new Chat**. Do not
+uninstall and recreate the plugin for ordinary updates, and do not test a
+refresh in an existing conversation because it may retain old metadata.

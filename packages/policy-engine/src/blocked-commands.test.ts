@@ -44,9 +44,28 @@ describe("BlockedCommands", () => {
     expect(bc.isBlocked(["diskpart"]).blocked).toBe(true);
   });
 
-  it("blocks git push --force", () => {
+  it("blocks unsafe Git force pushes", () => {
     expect(bc.isBlocked(["git", "push", "origin", "main", "--force"]).blocked).toBe(true);
     expect(bc.isBlocked(["git", "push", "-f"]).blocked).toBe(true);
+    expect(bc.isBlocked(["git", "push", "origin", "+main"]).blocked).toBe(true);
+    expect(bc.isBlocked(["git", "push", "--force-with-lease", "origin", "main"]).blocked).toBe(true);
+    expect(bc.isBlocked([
+      "git",
+      "push",
+      "--force-with-lease=refs/heads/main:835ec10",
+      "origin",
+      "main",
+    ]).blocked).toBe(true);
+  });
+
+  it("allows an explicit force-with-lease pinned to the full expected remote SHA", () => {
+    expect(bc.isBlocked([
+      "git",
+      "push",
+      "--force-with-lease=refs/heads/main:835ec1023fc99c96886fea7b470a5039a8685f20",
+      "origin",
+      "main",
+    ]).blocked).toBe(false);
   });
 
   it("blocks curl | sh (pipe to shell)", () => {

@@ -8,6 +8,12 @@ import { TOOL_DEFINITIONS, getHandler, type ToolContext, type ProcessInfo } from
 import { WorkspaceValidator, BlockedCommands, normalizeArgv } from "@codehands/policy-engine";
 import { AuditLogger } from "@codehands/audit";
 import type { CodehandsConfig } from "./config.js";
+import {
+  CODEHANDS_ACTIVITY_OUTPUT_SCHEMA,
+  activityTitle,
+  createActivityPayload,
+  invocationLabels,
+} from "./activity-ui.js";
 
 export interface SessionState {
   activeWorkspace: string | null;
@@ -19,6 +25,33 @@ const globalProcesses: Map<string, ProcessInfo> = new Map();
 
 export interface ServerFeatures {
   batch?: boolean;
+}
+
+export function createToolDescriptor(def: (typeof TOOL_DEFINITIONS)[number]) {
+  return {
+    name: def.name,
+    title: activityTitle(def.name),
+    description: def.description,
+    inputSchema: {
+      type: "object" as const,
+      additionalProperties: false,
+      ...def.inputSchema,
+    },
+    outputSchema: CODEHANDS_ACTIVITY_OUTPUT_SCHEMA,
+    annotations: {
+      readOnlyHint: def.annotations?.readOnlyHint ?? false,
+      destructiveHint: def.annotations?.destructiveHint ?? false,
+      openWorldHint: def.name === "http_request" || def.name === "process_start",
+    },
+    _meta: {
+      // Keep native host status labels, but deliberately do not publish a UI
+      // resource URI/output template. A widget-side mobile check happens only
+      // after the host has instantiated the iframe, which is too late to
+      // protect mobile ChatGPT clients that crash while loading that iframe.
+      "openai/toolInvocation/invoking": invocationLabels(def.name).invoking,
+      "openai/toolInvocation/invoked": invocationLabels(def.name).invoked,
+    },
+  };
 }
 
 export function createServer(config: CodehandsConfig, adapter: CodexAdapter, logger?: AuditLogger, sessionId?: string, features?: ServerFeatures) {
@@ -43,15 +76,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const visibleTools = TOOL_DEFINITIONS.filter((def) => !hiddenTools.has(def.name));
     return {
-      tools: visibleTools.map((def) => ({
-        name: def.name,
-        description: def.description,
-        inputSchema: {
-          type: "object" as const,
-          additionalProperties: false,
-          ...def.inputSchema,
-        },
-      })),
+      tools: visibleTools.map(createToolDescriptor),
     };
   });
 
@@ -79,35 +104,62 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
       },
     };
 
+    const start = Date.now();
+    const activityPayload = (
+      durationMs: number,
+      success: boolean,
+      content: Array<{ type: "text"; text: string }>,
+      error?: string,
+    ) =>
+      createActivityPayload(
+        name,
+        (params ?? {}) as Record<string, unknown>,
+        start,
+        durationMs,
+        success,
+        content,
+        error,
+      );
+
     if (name === "process_start" && params) {
       const command = params["command"] as string;
       const args = (params["args"] as string[] | undefined) ?? [];
       const argv = normalizeArgv(command, args);
       const blockCheck = blockedCmds.isBlocked(argv);
       if (blockCheck.blocked) {
+        const durationMs = Date.now() - start;
+        const content = [{ type: "text" as const, text: blockCheck.reason! }];
         return {
-          content: [{ type: "text", text: blockCheck.reason! }],
+          content,
+          structuredContent: activityPayload(durationMs, false, content, blockCheck.reason!),
           isError: true,
         } as const;
       }
     }
 
     if (hiddenTools.has(name)) {
+      const message = `Tool "${name}" is not enabled. Start with --batch flag to enable it.`;
+      const durationMs = Date.now() - start;
+      const content = [{ type: "text" as const, text: message }];
       return {
-        content: [{ type: "text", text: `Tool "${name}" is not enabled. Start with --batch flag to enable it.` }],
+        content,
+        structuredContent: activityPayload(durationMs, false, content, message),
         isError: true,
       } as const;
     }
 
     const handler = getHandler(name);
     if (!handler) {
+      const message = `Unknown tool: ${name}`;
+      const durationMs = Date.now() - start;
+      const content = [{ type: "text" as const, text: message }];
       return {
-        content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        content,
+        structuredContent: activityPayload(durationMs, false, content, message),
         isError: true,
       } as const;
     }
 
-    const start = Date.now();
     try {
       const result = await handler((params ?? {}) as Record<string, unknown>, ctx);
       if (name === "workspace_set" && !result.isError) {
@@ -115,32 +167,38 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
         globalWorkspace = ctx.activeWorkspace;
       }
       const errorText = result.isError ? result.content[0]?.text : undefined;
+      const durationMs = Date.now() - start;
       audit.log({
         timestamp: new Date().toISOString(),
-        sessionId: "session",
+        sessionId: sessionId ?? "default",
         tool: name,
         params: (params ?? {}) as Record<string, unknown>,
-        durationMs: Date.now() - start,
+        durationMs,
         success: !result.isError,
         error: errorText,
       });
+      const content = result.content as Array<{ type: "text"; text: string }>;
       return {
-        content: result.content as Array<{ type: "text"; text: string }>,
+        content,
+        structuredContent: activityPayload(durationMs, !result.isError, content, errorText),
         isError: result.isError,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const durationMs = Date.now() - start;
       audit.log({
         timestamp: new Date().toISOString(),
-        sessionId: "session",
+        sessionId: sessionId ?? "default",
         tool: name,
         params: (params ?? {}) as Record<string, unknown>,
-        durationMs: Date.now() - start,
+        durationMs,
         success: false,
         error: message,
       });
+      const content = [{ type: "text" as const, text: `Error: ${message}` }];
       return {
-        content: [{ type: "text", text: `Error: ${message}` }],
+        content,
+        structuredContent: activityPayload(durationMs, false, content, message),
         isError: true,
       } as const;
     }
