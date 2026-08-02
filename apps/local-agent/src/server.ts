@@ -16,6 +16,7 @@ import {
   activityTitle,
   createActivityPayload,
   invocationLabels,
+  matchesActivityResourceUri,
   renderActivityWidget,
 } from "./activity-ui.js";
 
@@ -92,12 +93,12 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const visibleTools = TOOL_DEFINITIONS.filter((def) => !hiddenTools.has(def.name));
-    const definition = visibleTools.find((def) => activityResourceUri(def.name) === request.params.uri);
+    const definition = visibleTools.find((def) => matchesActivityResourceUri(request.params.uri, def.name));
     if (!definition) throw new Error(`Unknown activity resource: ${request.params.uri}`);
 
     return {
       contents: [{
-        uri: activityResourceUri(definition.name),
+        uri: request.params.uri,
         mimeType: "text/html;profile=mcp-app",
         text: renderActivityWidget(definition.name),
         _meta: {

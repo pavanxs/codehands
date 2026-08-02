@@ -6,13 +6,20 @@ import {
   createActivityPayload,
   invocationLabels,
   isMobileActivityUserAgent,
+  matchesActivityResourceUri,
   renderActivityWidget,
   sanitizeActivityArguments,
 } from "./activity-ui.js";
 
 describe("CodeHands activity UI", () => {
   it("creates a stable resource URI for each tool", () => {
-    expect(activityResourceUri("fs_readFile")).toBe("ui://codehands/activity/v1/fs_readFile.html");
+    expect(activityResourceUri("fs_readFile")).toBe("ui://codehands/activity/v2/fs_readFile.html");
+  });
+
+  it("serves the current resource version and accepts legacy widget URLs", () => {
+    expect(matchesActivityResourceUri("ui://codehands/activity/v2/fs_readFile.html", "fs_readFile")).toBe(true);
+    expect(matchesActivityResourceUri("ui://codehands/activity/v1/fs_readFile.html", "fs_readFile")).toBe(true);
+    expect(matchesActivityResourceUri("ui://codehands/activity/v1/fs_writeFile.html", "fs_readFile")).toBe(false);
   });
 
   it("publishes the structured activity result schema", () => {
@@ -45,7 +52,7 @@ describe("CodeHands activity UI", () => {
     });
   });
 
-  it("includes recent calls in the inline activity ledger", () => {
+  it("keeps every inline widget scoped to its own tool call", () => {
     createActivityPayload("workspace_list", {}, 100_000, 1, true, [
       { type: "text", text: '{"workspaces":["/workspace"]}' },
     ]);
@@ -53,7 +60,6 @@ describe("CodeHands activity UI", () => {
       { type: "text", text: '{"path":"package.json","size":123}' },
     ]);
     expect(payload.codehandsActivities.map((activity) => activity.tool)).toEqual([
-      "workspace_list",
       "fs_getMetadata",
     ]);
   });
@@ -81,7 +87,7 @@ describe("CodeHands activity UI", () => {
     expect(html).toContain("ui/notifications/tool-result");
     expect(html).toContain('request("ui/initialize"');
     expect(html).toContain('method: "ui/notifications/initialized"');
-    expect(html).toContain("codehandsActivities");
+    expect(html).not.toContain("renderCompletedActivity");
     expect(html).toContain("workspace_list");
     expect(html).not.toContain("<script src=");
   });

@@ -1,4 +1,5 @@
-const ACTIVITY_RESOURCE_PREFIX = "ui://codehands/activity/v1/";
+const ACTIVITY_RESOURCE_PREFIX = "ui://codehands/activity/v2/";
+const LEGACY_ACTIVITY_RESOURCE_PREFIX = "ui://codehands/activity/v1/";
 
 const ACTIVITY_SCHEMA = {
   type: "object",
@@ -69,11 +70,6 @@ export interface CodeHandsActivity {
   error?: string;
 }
 
-const ACTIVITY_RUN_GAP_MS = 30_000;
-const MAX_ACTIVITY_HISTORY = 100;
-let activityHistory: CodeHandsActivity[] = [];
-let latestActivityStartMs = 0;
-
 export function isMobileActivityUserAgent(
   navigatorUserAgent: string,
   hostUserAgent?: unknown,
@@ -119,6 +115,12 @@ const SENSITIVE_KEYS = /^(?:content|body|dataBase64|env|token|secret|password|au
 
 export function activityResourceUri(tool: string): string {
   return `${ACTIVITY_RESOURCE_PREFIX}${encodeURIComponent(tool)}.html`;
+}
+
+export function matchesActivityResourceUri(uri: string, tool: string): boolean {
+  const encodedTool = `${encodeURIComponent(tool)}.html`;
+  return uri === `${ACTIVITY_RESOURCE_PREFIX}${encodedTool}`
+    || uri === `${LEGACY_ACTIVITY_RESOURCE_PREFIX}${encodedTool}`;
 }
 
 export function invocationLabels(tool: string): { invoking: string; invoked: string } {
@@ -195,18 +197,14 @@ export function createActivityPayload(
   codehandsActivities: CodeHandsActivity[];
 } {
   const activity = createActivity(tool, params, startedAtMs, durationMs, success, error);
-  if (latestActivityStartMs === 0 || startedAtMs - latestActivityStartMs > ACTIVITY_RUN_GAP_MS) {
-    activityHistory = [];
-  }
-  latestActivityStartMs = Math.max(latestActivityStartMs, startedAtMs);
-  activityHistory.push(activity);
-  if (activityHistory.length > MAX_ACTIVITY_HISTORY) {
-    activityHistory = activityHistory.slice(-MAX_ACTIVITY_HISTORY);
-  }
   return {
     codehandsResult: { content, isError: !success },
     codehandsActivity: activity,
-    codehandsActivities: [...activityHistory],
+    // Each ChatGPT tool call gets its own iframe. Including prior calls here made
+    // every later iframe replay the full history, so completed chats appeared to
+    // keep running while old widgets hydrated. Keep every widget scoped to the
+    // one call that created it.
+    codehandsActivities: [activity],
   };
 }
 
@@ -226,8 +224,6 @@ export function renderActivityWidget(tool: string): string {
     * { box-sizing: border-box; }
     body { margin: 0; color: var(--color-text-primary, CanvasText); background: transparent; }
     .activity { padding: 5px 2px; font-size: 14px; line-height: 1.35; }
-    .activity + .activity { border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
-    .count { padding: 3px 2px 5px 30px; color: var(--color-text-secondary, #707070); font-size: 12px; }
     .summary { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
     .icon { width: 18px; height: 18px; display: grid; place-items: center; font-size: 14px; font-weight: 700; }
     .icon.running { border: 2px solid color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; }
@@ -254,8 +250,6 @@ export function renderActivityWidget(tool: string): string {
   </style>
 </head>
 <body>
-  <div id="count" class="count" hidden></div>
-  <div id="history" aria-live="polite"></div>
   <section id="current" class="activity" aria-live="polite">
     <div class="summary">
       <span id="icon" class="icon running" aria-label="Running"></span>
@@ -279,9 +273,6 @@ export function renderActivityWidget(tool: string): string {
     const durationEl = document.getElementById("duration");
     const argumentsEl = document.getElementById("arguments");
     const errorEl = document.getElementById("error");
-    const countEl = document.getElementById("count");
-    const historyEl = document.getElementById("history");
-    const currentEl = document.getElementById("current");
     const pendingRequests = new Map();
     let nextRequestId = 1;
     let connected = false;
@@ -334,49 +325,6 @@ export function renderActivityWidget(tool: string): string {
       notifyHeight();
     }
 
-    function renderCompletedActivity(activity) {
-      const section = document.createElement("section");
-      section.className = "activity";
-
-      const summaryRow = document.createElement("div");
-      summaryRow.className = "summary";
-
-      const rowIcon = document.createElement("span");
-      rowIcon.className = "icon " + activity.status;
-      rowIcon.textContent = activity.status === "succeeded" ? "✓" : "×";
-      rowIcon.setAttribute("aria-label", activity.status === "succeeded" ? "Succeeded" : "Failed");
-
-      const rowName = document.createElement("div");
-      rowName.className = "name";
-      const rowLabel = document.createElement("span");
-      rowLabel.className = "label";
-      rowLabel.textContent = activity.label + ".";
-      const rowTool = document.createElement("code");
-      rowTool.textContent = activity.tool;
-      rowName.append(rowLabel, rowTool);
-
-      const rowDuration = document.createElement("span");
-      rowDuration.className = "duration";
-      rowDuration.textContent = formatDuration(activity.durationMs);
-      summaryRow.append(rowIcon, rowName, rowDuration);
-
-      const rowDetails = document.createElement("details");
-      const rowDetailsLabel = document.createElement("summary");
-      rowDetailsLabel.textContent = "Call details";
-      const rowArguments = document.createElement("pre");
-      rowArguments.textContent = JSON.stringify(sanitize(activity.arguments || {}), null, 2);
-      rowDetails.append(rowDetailsLabel, rowArguments);
-      if (activity.error) {
-        const rowError = document.createElement("pre");
-        rowError.className = "error";
-        rowError.textContent = activity.error;
-        rowDetails.append(rowError);
-      }
-
-      section.append(summaryRow, rowDetails);
-      return section;
-    }
-
     function showResult(result) {
       if (mobileActivitySuppressed) return;
       const activity = result?.codehandsActivity;
@@ -393,13 +341,6 @@ export function renderActivityWidget(tool: string): string {
         errorEl.hidden = false;
         errorEl.textContent = activity.error;
       }
-      const activities = Array.isArray(result.codehandsActivities) && result.codehandsActivities.length > 0
-        ? result.codehandsActivities
-        : [activity];
-      historyEl.replaceChildren(...activities.map(renderCompletedActivity));
-      countEl.hidden = activities.length < 2;
-      countEl.textContent = activities.length + " CodeHands call" + (activities.length === 1 ? "" : "s");
-      currentEl.hidden = true;
       notifyHeight();
     }
 
