@@ -100,12 +100,12 @@ describe("normalizeArgv", () => {
     expect(normalizeArgv("node", ["server.js"])).toEqual(["node", "server.js"]);
   });
 
-  it("wraps single command in shell on Windows", () => {
-    const original = process.platform;
-    if (original === "win32") {
-      expect(normalizeArgv("echo hello")).toEqual(["cmd.exe", "/c", "echo hello"]);
-    } else {
-      expect(normalizeArgv("echo hello")).toEqual(["/bin/sh", "-c", "echo hello"]);
-    }
+  it("keeps a single command as literal argv", () => {
+    expect(normalizeArgv("echo hello")).toEqual(["echo hello"]);
+  });
+
+  it("does not interpret metacharacters", () => {
+    expect(normalizeArgv("printf", ["a b", "$(touch nope)", "x|y", "(z)", "\"q\""]))
+      .toEqual(["printf", "a b", "$(touch nope)", "x|y", "(z)", "\"q\""]);
   });
 });

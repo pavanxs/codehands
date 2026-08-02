@@ -36,6 +36,7 @@ import {
 export class CodexAdapter extends EventEmitter {
   private manager: ExecServerManager;
   private ready = false;
+  private generation = 0;
 
   constructor(options: SpawnOptions = {}) {
     super();
@@ -43,6 +44,7 @@ export class CodexAdapter extends EventEmitter {
 
     this.manager.on("ready", (sessionId: string) => {
       this.ready = true;
+      this.generation++;
       this.emit("ready", sessionId);
     });
 
@@ -76,6 +78,11 @@ export class CodexAdapter extends EventEmitter {
 
   isReady(): boolean {
     return this.ready;
+  }
+
+  /** Increments whenever a newly initialized exec-server becomes ready. */
+  getGeneration(): number {
+    return this.generation;
   }
 
   private rpc(): RpcClient {

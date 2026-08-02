@@ -109,10 +109,12 @@ export class BlockedCommands {
 }
 
 export function normalizeArgv(command: string, args: string[] = []): string[] {
-  if (args.length > 0) return [command, ...args];
+  return [command, ...args];
+}
 
-  const isWindows = process.platform === "win32";
-  const shell = isWindows ? "cmd.exe" : "/bin/sh";
-  const flag = isWindows ? "/c" : "-c";
-  return [shell, flag, command];
+/** Build argv for the explicit shell tool. Never use this for direct commands. */
+export function shellArgv(command: string, platform: NodeJS.Platform = process.platform): string[] {
+  return platform === "win32"
+    ? ["cmd.exe", "/d", "/s", "/c", command]
+    : ["/bin/sh", "-c", command];
 }

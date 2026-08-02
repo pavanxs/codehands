@@ -6,7 +6,13 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { CodexAdapter } from "@codehands/codex-adapter";
-import { TOOL_DEFINITIONS, getHandler, type ToolContext, type ProcessInfo } from "@codehands/mcp-tools";
+import {
+  AgentRegistry,
+  ProcessRegistry,
+  TOOL_DEFINITIONS,
+  getHandler,
+  type ToolContext,
+} from "@codehands/mcp-tools";
 import { WorkspaceValidator, BlockedCommands, normalizeArgv } from "@codehands/policy-engine";
 import { AuditLogger } from "@codehands/audit";
 import type { CodehandsConfig } from "./config.js";
@@ -21,11 +27,11 @@ import {
 
 export interface SessionState {
   activeWorkspace: string | null;
-  ownedProcesses: Map<string, ProcessInfo>;
 }
 
 let globalWorkspace: string | null = null;
-const globalProcesses: Map<string, ProcessInfo> = new Map();
+const globalProcesses = new ProcessRegistry();
+const globalAgents = new AgentRegistry();
 
 export interface ServerFeatures {
   batch?: boolean;
@@ -42,8 +48,9 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
 
   const hiddenTools = new Set<string>();
   if (!features?.batch) hiddenTools.add("batch");
+  if (!config.allowShell) hiddenTools.add("process_startShell");
 
-  const sessionState: SessionState = { activeWorkspace: globalWorkspace, ownedProcesses: globalProcesses };
+  const sessionState: SessionState = { activeWorkspace: globalWorkspace };
 
   const server = new Server(
     { name: "codehands", version: "0.1.0" },
@@ -66,7 +73,7 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
         annotations: {
           readOnlyHint: def.annotations?.readOnlyHint ?? false,
           destructiveHint: def.annotations?.destructiveHint ?? false,
-          openWorldHint: def.name === "http_request" || def.name === "process_start",
+          openWorldHint: def.name === "http_request" || def.name.startsWith("process_") || def.name.startsWith("agent_"),
         },
         _meta: {
           ui: { resourceUri: activityResourceUri(def.name) },
@@ -119,8 +126,13 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
       adapter,
       activeWorkspace: sessionState.activeWorkspace,
       workspaces: validator.getWorkspaces(),
-      ownedProcesses: sessionState.ownedProcesses,
+      processRegistry: globalProcesses,
+      agentRegistry: globalAgents,
       sessionId: sessionId ?? "default",
+      allowShell: config.allowShell ?? false,
+      testCommands: config.testCommands ?? {},
+      codexBinary: config.codexBinary ?? "codex",
+      allowedAgentModels: config.agentModels ?? [],
       resolvePath: (p: string) => {
         const resolved = validator.resolvePath(p, sessionState.activeWorkspace);
         const check = validator.validate(resolved);
@@ -170,7 +182,9 @@ export function createServer(config: CodehandsConfig, adapter: CodexAdapter, log
     }
 
     if (hiddenTools.has(name)) {
-      const message = `Tool "${name}" is not enabled. Start with --batch flag to enable it.`;
+      const message = name === "process_startShell"
+        ? `Tool "${name}" is disabled. Set allowShell: true in CodeHands config to opt in.`
+        : `Tool "${name}" is not enabled. Start with --batch flag to enable it.`;
       const durationMs = Date.now() - start;
       const content = [{ type: "text" as const, text: message }];
       return {
