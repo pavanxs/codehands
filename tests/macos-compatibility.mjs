@@ -81,12 +81,12 @@ async function waitForHealth(port) {
 }
 
 function processRows() {
-  const result = spawnSync("ps", ["-axo", "pid=,ppid=,comm=,args="], { encoding: "utf8" });
+  const result = spawnSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.split("\n").flatMap((line) => {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
     if (!match) return [];
-    return [{ pid: Number(match[1]), ppid: Number(match[2]), comm: match[3], args: match[4] }];
+    return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] }];
   });
 }
 
@@ -107,7 +107,11 @@ function descendants(rootPid) {
 }
 
 function nativeCodexChildren(rootPid) {
-  return descendants(rootPid).filter((row) => path.basename(row.comm).toLowerCase().includes("codex") && row.args.includes("exec-server"));
+  const matches = descendants(rootPid).filter((row) =>
+    /codex/i.test(row.command) && row.command.includes("exec-server"),
+  );
+  const parentsOfMatches = new Set(matches.map((row) => row.ppid));
+  return matches.filter((row) => !parentsOfMatches.has(row.pid));
 }
 
 async function connectClient(port, name) {
@@ -211,7 +215,10 @@ try {
   stage("Verifying real exec-server crash recovery.");
   const codexBefore = await waitFor(() => {
     const children = nativeCodexChildren(server.pid);
-    return children.length === 1 ? children : false;
+    if (children.length !== 1) {
+      throw new Error(`found ${children.length} leaf candidates: ${JSON.stringify(children)}`);
+    }
+    return children;
   }, "one native Codex exec-server child");
   process.kill(codexBefore[0].pid, "SIGKILL");
 
