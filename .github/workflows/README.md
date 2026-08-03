@@ -14,4 +14,6 @@
 - verifies structured patch rejection, real exec-server crash recovery, and live CLI log rendering;
 - uploads no artifacts and creates no Cargo build cache.
 
+Use `runtime` mode for the inexpensive real-Codex, HTTP, crash-recovery, elicitation, and live-log checks without compiling the native helper. Use `full` mode for the same checks plus the native helper build and patch/image integration.
+
 The macOS workflow is intentionally excluded from push, pull-request, and scheduled triggers, uses no Cargo cache or uploaded artifacts, and has a 15-minute hard cap.

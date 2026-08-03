@@ -2,6 +2,15 @@ name: macOS Compatibility
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Test scope
+        required: true
+        default: full
+        type: choice
+        options:
+          - runtime
+          - full
 
 permissions:
   contents: read
@@ -53,6 +62,7 @@ jobs:
           pnpm test
 
       - name: Build native helper once with the CI profile
+        if: inputs.mode == 'full'
         env:
           CODEHANDS_PATCH_HELPER_PROFILE: ci
           CARGO_INCREMENTAL: "0"
@@ -61,6 +71,8 @@ jobs:
           pnpm run test:patch-helper
 
       - name: Run real Codex and MCP compatibility checks
+        env:
+          CODEHANDS_MACOS_RUNTIME_ONLY: ${{ inputs.mode == 'runtime' && '1' || '0' }}
         run: |
           node tests/correctness-smoke.mjs
           node tests/macos-compatibility.mjs

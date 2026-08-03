@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -12,6 +11,8 @@ assert.equal(process.platform, "darwin", "This compatibility suite must run on m
 const root = path.resolve(".");
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "codehands-macos-home-"));
 const patchFixture = path.join(root, "tests", ".tmp-macos-overwrite.txt");
+const runtimeOnly = process.env.CODEHANDS_MACOS_RUNTIME_ONLY === "1";
+const port = 31_991;
 let server;
 let logViewer;
 let client;
@@ -19,35 +20,38 @@ let serverOutput = "";
 let logOutput = "";
 let serverError;
 let logViewerError;
+const harnessDeadline = setTimeout(() => {
+  console.error("[macos] Harness exceeded its five-minute internal deadline.");
+  process.exit(1);
+}, 5 * 60_000);
+
+function stage(message) {
+  console.log(`[macos] ${message}`);
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function run(command, args, env = {}) {
+function run(command, args, env = {}, timeoutMs = 60_000) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: root,
       env: { ...process.env, ...env },
       stdio: "inherit",
     });
-    child.once("error", reject);
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`${command} ${args.join(" ")} exceeded ${timeoutMs}ms.`));
+    }, timeoutMs);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     child.once("exit", (code, signal) => {
+      clearTimeout(timer);
       if (code === 0) resolve();
       else reject(new Error(`${command} ${args.join(" ")} exited with code=${code}, signal=${signal}`));
-    });
-  });
-}
-
-async function freePort() {
-  return new Promise((resolve, reject) => {
-    const listener = net.createServer();
-    listener.once("error", reject);
-    listener.listen(0, "127.0.0.1", () => {
-      const address = listener.address();
-      assert(address && typeof address === "object");
-      const port = address.port;
-      listener.close((error) => error ? reject(error) : resolve(port));
     });
   });
 }
@@ -129,7 +133,7 @@ async function stopChild(child) {
   ]);
 }
 
-const port = await freePort();
+stage(`Preparing isolated ${runtimeOnly ? "runtime-only" : "full"} run on port ${port}.`);
 const codehandsDirectory = path.join(temporaryHome, ".codehands");
 fs.mkdirSync(codehandsDirectory, { recursive: true });
 fs.writeFileSync(path.join(codehandsDirectory, "config.json"), JSON.stringify({
@@ -145,6 +149,7 @@ const isolatedEnvironment = {
 };
 
 try {
+  stage("Starting CodeHands server.");
   server = spawn("node", ["apps/local-agent/dist/cli.js", "start", "--batch"], {
     cwd: root,
     env: { ...process.env, ...isolatedEnvironment },
@@ -172,27 +177,38 @@ try {
       return false;
     }
   }, `server startup on port ${port}`);
+  stage("Server health check passed.");
 
+  stage("Running core HTTP integration suite.");
   await run("node", ["tests/integration.mjs"], isolatedEnvironment);
-  await run("node", ["tests/new-tools-integration.mjs"], isolatedEnvironment);
+  if (!runtimeOnly) {
+    stage("Running native patch and image HTTP integration suite.");
+    await run("node", ["tests/new-tools-integration.mjs"], isolatedEnvironment);
+  }
+  stage("Running form-elicitation HTTP integration suite.");
   await run("node", ["tests/elicitation-http-integration.mjs"], isolatedEnvironment);
 
+  stage("Connecting direct MCP client.");
   client = await connectClient(port, "macos-compatibility");
 
-  fs.writeFileSync(patchFixture, "original\n");
-  const overwrite = await client.callTool({
-    name: "fs_applyPatch",
-    arguments: {
-      patch: "*** Begin Patch\n*** Add File: tests/.tmp-macos-overwrite.txt\n+replacement\n*** End Patch",
-    },
-  });
-  const overwriteData = parseText(overwrite);
-  assert.equal(overwrite.isError, true);
-  assert.equal(overwriteData.success, false);
-  assert.equal(overwriteData.error.code, "PATCH_OVERWRITE_REJECTED");
-  assert.equal(fs.readFileSync(patchFixture, "utf8"), "original\n");
-  fs.rmSync(patchFixture, { force: true });
+  if (!runtimeOnly) {
+    stage("Verifying structured native patch rejection.");
+    fs.writeFileSync(patchFixture, "original\n");
+    const overwrite = await client.callTool({
+      name: "fs_applyPatch",
+      arguments: {
+        patch: "*** Begin Patch\n*** Add File: tests/.tmp-macos-overwrite.txt\n+replacement\n*** End Patch",
+      },
+    });
+    const overwriteData = parseText(overwrite);
+    assert.equal(overwrite.isError, true);
+    assert.equal(overwriteData.success, false);
+    assert.equal(overwriteData.error.code, "PATCH_OVERWRITE_REJECTED");
+    assert.equal(fs.readFileSync(patchFixture, "utf8"), "original\n");
+    fs.rmSync(patchFixture, { force: true });
+  }
 
+  stage("Verifying real exec-server crash recovery.");
   const codexBefore = await waitFor(() => {
     const children = nativeCodexChildren(server.pid);
     return children.length === 1 ? children : false;
@@ -217,6 +233,7 @@ try {
   assert.equal((serverOutput.match(/exec-server crashed, restarting/g) ?? []).length, 1);
   assert.equal(nativeCodexChildren(server.pid).length, 1);
 
+  stage("Verifying live CLI log rendering.");
   logViewer = spawn("node", ["apps/local-agent/dist/cli.js", "logs"], {
     cwd: root,
     env: { ...process.env, ...isolatedEnvironment },
@@ -263,8 +280,9 @@ try {
   });
   await waitFor(() => logOutput.includes("PARTIAL") && logOutput.includes("TIMEOUT") && logOutput.includes("idle "), "nested live-log outcomes");
 
-  console.log("macOS comprehensive compatibility checks passed.");
+  stage(`${runtimeOnly ? "Runtime-only" : "Comprehensive"} compatibility checks passed.`);
 } finally {
+  clearTimeout(harnessDeadline);
   fs.rmSync(patchFixture, { force: true });
   if (client) await client.close().catch(() => undefined);
   await stopChild(logViewer);
