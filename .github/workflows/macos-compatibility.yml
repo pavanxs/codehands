@@ -1,0 +1,54 @@
+name: macOS Compatibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-compatibility
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Comprehensive macOS compatibility
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout with Codex source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pinned Codex CLI
+        run: npm install --global @openai/codex@0.146.0
+
+      - name: Show toolchain versions
+        run: |
+          node --version
+          pnpm --version
+          rustc --version
+          cargo --version
+          codex --version
+
+      - name: Build once and run the complete compatibility suite
+        run: |
+          pnpm run check
+          node tests/correctness-smoke.mjs
+          node tests/macos-compatibility.mjs
