@@ -45,8 +45,13 @@ describe("WorkspaceValidator", () => {
   });
 
   it("returns a canonical resolved path", () => {
-    const result = v.validate(path.join(WORKSPACE_A, "src", "..", "package.json"));
-    expect(result.resolvedPath).toBe(path.resolve(WORKSPACE_A, "package.json"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "codehands-workspace-"));
+    temporaryPaths.push(root);
+    fs.mkdirSync(path.join(root, "src"));
+
+    const validator = new WorkspaceValidator([root]);
+    const result = validator.validate(path.join(root, "src", "..", "package.json"));
+    expect(result.resolvedPath).toBe(path.resolve(fs.realpathSync.native(root), "package.json"));
     expect(result.allowed).toBe(true);
   });
 

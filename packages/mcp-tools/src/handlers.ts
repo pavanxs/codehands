@@ -1129,12 +1129,11 @@ const handlers: Record<string, HandlerFn> = {
     const workspace = params["workspace"] as string;
     const normalize = (value: string) => value.replace(/\\/g, "/").toLowerCase();
     const normalizedInput = normalize(workspace);
-    const found = ctx.workspaces.find((candidate) => {
-      const normalized = normalize(candidate);
-      return normalized === normalizedInput
-        || normalized.endsWith(`/${normalizedInput}`)
-        || normalizedInput.endsWith(`/${normalized.split("/").pop()!}`);
-    });
+    const exact = ctx.workspaces.find((candidate) => normalize(candidate) === normalizedInput);
+    const isBareName = !path.isAbsolute(workspace) && !workspace.includes("/") && !workspace.includes("\\");
+    const found = exact ?? (isBareName
+      ? ctx.workspaces.find((candidate) => path.basename(candidate).toLowerCase() === normalizedInput)
+      : undefined);
     if (!found) return errorResult(`Workspace not found: "${workspace}". Use workspace_list to see approved workspaces.`);
     ctx.activeWorkspace = found;
     return textResult({ activeWorkspace: found, set: true });

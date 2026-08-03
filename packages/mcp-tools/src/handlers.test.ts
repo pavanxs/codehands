@@ -92,6 +92,20 @@ function createBinaryFileAdapter(bytes: Buffer): Partial<CodexAdapter> {
 }
 
 describe("MCP handlers", () => {
+  it("uses an exact absolute workspace path before basename matching", async () => {
+    const outer = path.join(process.cwd(), "same-name");
+    const inner = path.join(outer, "same-name");
+    const ctx = createContext({});
+    ctx.workspaces = [inner, outer];
+    ctx.activeWorkspace = inner;
+
+    const result = await getHandler("workspace_set")!({ workspace: outer }, ctx);
+
+    expect(result.isError).not.toBe(true);
+    expect(parse(result)).toEqual({ activeWorkspace: outer, set: true });
+    expect(ctx.activeWorkspace).toBe(outer);
+  });
+
   it("marks structured fs_applyPatch rejections as MCP errors", async () => {
     const helperResult = {
       success: false,
