@@ -893,7 +893,9 @@ const handlers: Record<string, HandlerFn> = {
       if (typeof data["success"] !== "boolean" || !Array.isArray(data["changes"])) {
         throw new Error("Patch helper returned an invalid result shape.");
       }
-      return textResult(data);
+      const response = textResult(data);
+      if (data["success"] === false) response.isError = true;
+      return response;
     } catch (error) {
       return errorResult(`fs_applyPatch failed: ${messageOf(error)}. Build the native helper with pnpm build:patch-helper.`);
     }

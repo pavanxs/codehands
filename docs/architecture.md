@@ -58,6 +58,8 @@ Per-user state, process ownership, permissions, and isolation are deferred to a 
 5. Codex exec-server or the Codex-linked patch helper performs the local operation.
 6. CodeHands returns the authoritative structured result and backward-compatible JSON text; `view_image` additionally returns MCP image content and `request_user_input` may issue a nested MCP elicitation request.
 
+Exec-server crash recovery is generation-safe: stale child/RPC events are ignored and only one restart may be scheduled for a single crash, preventing duplicate Codex children.
+
 ## Upstream boundary
 
 `vendor/codex/` must not be modified. CodeHands primarily follows Codex exec-server contracts and adapts them at the public MCP boundary, such as exposing directly reusable continuation positions or homogeneous one-to-eight request arrays. The patch helper is built outside `vendor/codex/`, uses a pinned lockfile, and links the maintained `codex-apply-patch` crate rather than copying its parser or invoking Codex's hidden apply-patch dispatch path.

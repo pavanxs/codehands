@@ -4,7 +4,7 @@
 
 This is the single authoritative source for current CodeHands design decisions, implemented tool contracts, validation status, and deferred work.
 
-**Implementation status (August 3, 2026):** the source tree implements 24 public tool definitions. Clients without MCP form elicitation receive 23 tools because `request_user_input` is capability-gated; clients advertising `elicitation.form` receive all 24. The TypeScript monorepo build, native patch-helper release build, 91 automated tests, seven native patch safety checks, real Codex-backed correctness smoke, 50-check existing HTTP integration suite, 15-check new-tool HTTP suite, and six-check live HTTP elicitation suite all pass on Windows. The active port-3100 server and installed client snapshot still require restart/refresh before they expose the new surface.
+**Implementation status (August 3, 2026):** the source tree implements 24 public tool definitions. Clients without MCP form elicitation receive 23 tools because `request_user_input` is capability-gated; clients advertising `elicitation.form` receive all 24. The TypeScript monorepo build, native patch-helper release build, 102 automated tests, seven native patch safety checks, real Codex-backed correctness smoke, 50-check existing HTTP integration suite, 15-check new-tool HTTP suite, and six-check live HTTP elicitation suite all pass on Windows. The active port-3100 server and installed client snapshot still require restart/refresh before they expose the new surface.
 
 Other repository documents have narrower purposes:
 
@@ -659,16 +659,19 @@ The focused current-version validation suite covers:
 - `repo_query` overview, tree, path/content search, changes, result bounds, and continuation
 - `view_image` MIME/signature validation, dimensions, size limits, and MCP image content
 - `request_user_input` capability hiding, accept/decline/cancel, validation, batch rejection, secret rejection, and HTTP elicitation
-- `fs_applyPatch` dry-run, add/update behavior, absolute/traversal rejection, overwrite rejection, CRLF preservation, preflight-before-mutation, and structured results
+- `fs_applyPatch` dry-run, add/update behavior, absolute/traversal rejection, overwrite rejection, CRLF preservation, preflight-before-mutation, structured results, and MCP `isError` on singular helper rejection
 
 Validation completed on August 3, 2026:
 
-- `pnpm check` passes: TypeScript build, pinned native release build, 10 Vitest files with 99 tests, and seven native patch-helper filesystem checks.
+- `pnpm check` passes: TypeScript build, pinned native release build, 11 Vitest files with 102 tests, and seven native patch-helper filesystem checks.
 - The in-memory MCP client/server tests confirm deterministic `outputSchema`, matching `structuredContent`, capability-gated tool listing, and elicitation accept/decline/cancel behavior.
 - `node tests/correctness-smoke.mjs` passes against the real Codex exec-server, including block-based file reads, `process_run`, process continuation, stdin, signal/termination, and batch behavior.
 - `node tests/integration.mjs` passes against an isolated built CodeHands server on port 3101: 50 checks passed and 0 failed.
 - `node tests/new-tools-integration.mjs` passes against the isolated HTTP server: 15 checks for tool listing, repository queries, dry-run and real MCP patch application, and image content.
 - `node tests/elicitation-http-integration.mjs` passes through Streamable HTTP: six checks covering 24-tool capability listing, nested form elicitation, schema, text output, and structured output.
+- A disposable CodeHands V3 stress harness passes 94 checks across eight concurrent MCP clients, maximum-size batches, filesystem continuations, process timeouts and output continuation, junction confinement outside approved workspaces, repository queries, patch safety, image limits, malformed and oversized HTTP requests, and accept/decline/cancel elicitation.
+- An isolated real-process crash test force-terminates the Codex child, observes exactly one `restarting (1/3)` event, confirms exactly one replacement `codex.exe`, and completes a post-recovery filesystem read.
+- A live `codehands logs` test confirms grouped batch output, `idle` versus active elapsed time, per-child durations, `PARTIAL`, and explicit nested `TIMEOUT` rendering.
 - `git diff --check` passes with only existing line-ending warnings. The isolated server and temporary config are removed after validation; the active port-3100 instance remains untouched until the explicit deployment restart.
 
 Do not make broader benchmark or cross-platform programs blockers for the current version.

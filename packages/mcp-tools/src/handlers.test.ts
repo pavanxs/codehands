@@ -92,6 +92,45 @@ function createBinaryFileAdapter(bytes: Buffer): Partial<CodexAdapter> {
 }
 
 describe("MCP handlers", () => {
+  it("marks structured fs_applyPatch rejections as MCP errors", async () => {
+    const helperResult = {
+      success: false,
+      dryRun: false,
+      partialApplied: false,
+      changes: [],
+      error: { code: "PATCH_OVERWRITE_REJECTED", message: "target exists" },
+    };
+    const ctx = createContext({
+      fsGetMetadata: async () => ({
+        isDirectory: false,
+        isFile: true,
+        isSymlink: false,
+        size: 1,
+        createdAtMs: 0,
+        modifiedAtMs: 0,
+      }),
+      processStart: async () => ({ processId: "patch-helper" }),
+      processWrite: async () => ({ status: "accepted" }),
+      processRead: async () => ({
+        chunks: [{ seq: 1, stream: "stdout", chunk: Buffer.from(JSON.stringify(helperResult)).toString("base64") }],
+        nextSeq: 2,
+        exited: true,
+        exitCode: 1,
+        closed: true,
+        failure: null,
+        sandboxDenied: false,
+      }),
+    });
+
+    const result = await getHandler("fs_applyPatch")!({
+      patch: "*** Begin Patch\n*** Add File: existing.txt\n+new\n*** End Patch",
+    }, ctx);
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual(helperResult);
+    expect(parse(result)).toEqual(helperResult);
+  });
+
   it("returns the same object as JSON text and structuredContent", async () => {
     const ctx = createContext({ fsWriteFile: async () => ({}) });
     const result = await getHandler("fs_writeFile")!({

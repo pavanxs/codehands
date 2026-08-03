@@ -24,6 +24,8 @@ export class ExecServerManager extends EventEmitter {
   private sessionId: string | null = null;
   private restartCount = 0;
   private stopped = false;
+  private restartScheduled = false;
+  private restartTimer: NodeJS.Timeout | null = null;
   private codexBinary: string;
   private listenMode: string;
 
@@ -36,11 +38,21 @@ export class ExecServerManager extends EventEmitter {
   async start(): Promise<ExecServerProcess> {
     this.stopped = false;
     this.restartCount = 0;
+    this.restartScheduled = false;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
     return this.spawnAndInit();
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.restartScheduled = false;
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
     this.cleanup();
   }
 
@@ -98,6 +110,7 @@ export class ExecServerManager extends EventEmitter {
           reject(new Error(message));
           return;
         }
+        if (this.process !== child) return;
         this.emit("error", err);
         if (!this.stopped) {
           this.handleCrash(null, null);
@@ -121,6 +134,7 @@ export class ExecServerManager extends EventEmitter {
       });
 
       child.on("exit", (code: number | null, signal: string | null) => {
+        if (this.process !== child) return;
         this.emit("exit", code, signal);
         if (!settled) {
           settled = true;
@@ -137,6 +151,7 @@ export class ExecServerManager extends EventEmitter {
       });
 
       rpc.on("close", () => {
+        if (this.rpc !== rpc) return;
         if (!this.stopped) {
           this.handleCrash(null, null);
         }
@@ -160,9 +175,12 @@ export class ExecServerManager extends EventEmitter {
   }
 
   private handleCrash(code: number | null, signal: string | null): void {
+    if (this.stopped || this.restartScheduled) return;
+    this.restartScheduled = true;
     this.cleanup();
 
     if (this.restartCount >= MAX_RESTART_ATTEMPTS) {
+      this.restartScheduled = false;
       this.emit("failed", new Error(
         `exec-server crashed ${MAX_RESTART_ATTEMPTS} times. Last exit: code=${code}, signal=${signal}`,
       ));
@@ -172,11 +190,19 @@ export class ExecServerManager extends EventEmitter {
     this.restartCount++;
     this.emit("restarting", this.restartCount, MAX_RESTART_ATTEMPTS);
 
-    setTimeout(() => {
-      if (this.stopped) return;
-      this.spawnAndInit().catch((err) => {
-        this.emit("failed", err);
-      });
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      if (this.stopped) {
+        this.restartScheduled = false;
+        return;
+      }
+      this.spawnAndInit().then(
+        () => { this.restartScheduled = false; },
+        (err) => {
+          this.restartScheduled = false;
+          this.emit("failed", err);
+        },
+      );
     }, RESTART_DELAY_MS);
   }
 
