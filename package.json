@@ -5,10 +5,13 @@
   "description": "A thin, policy-controlled MCP bridge over OpenAI Codex CLI.",
   "packageManager": "pnpm@10.10.0",
   "scripts": {
-    "build": "pnpm --recursive run build",
-    "check": "pnpm --recursive run check",
+    "build": "pnpm run build:typescript && pnpm run build:patch-helper",
+    "check": "pnpm run build && pnpm test && pnpm run test:patch-helper",
     "test": "vitest run",
-    "dev:agent": "pnpm --filter @mcp-harness/local-agent dev"
+    "dev:agent": "pnpm --filter @mcp-harness/local-agent dev",
+    "build:typescript": "pnpm --recursive run build",
+    "build:patch-helper": "node scripts/build-patch-helper.mjs",
+    "test:patch-helper": "node tests/apply-patch-helper.mjs"
   },
   "engines": {
     "node": ">=22"

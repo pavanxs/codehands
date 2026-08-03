@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
+import * as path from "node:path";
 import { RpcClient } from "./rpc-client.js";
 import { METHODS, type InitializeResponse } from "./types.js";
 
@@ -60,10 +61,24 @@ export class ExecServerManager extends EventEmitter {
       let settled = false;
 
       const isWindows = globalThis.process.platform === "win32";
-      const spawnCmd = isWindows ? "cmd.exe" : this.codexBinary;
-      const spawnArgs = isWindows
-        ? ["/c", this.codexBinary, "exec-server", "--listen", this.listenMode]
-        : ["exec-server", "--listen", this.listenMode];
+      let spawnCmd = this.codexBinary;
+      let spawnArgs = ["exec-server", "--listen", this.listenMode];
+      if (isWindows) {
+        const extension = path.win32.extname(this.codexBinary).toLowerCase();
+        if (extension !== ".exe" && extension !== ".com") {
+          spawnCmd = globalThis.process.env.ComSpec ?? globalThis.process.env.COMSPEC ?? "cmd.exe";
+          spawnArgs = [
+            "/d",
+            "/s",
+            "/c",
+            "call",
+            this.codexBinary,
+            "exec-server",
+            "--listen",
+            this.listenMode,
+          ];
+        }
+      }
 
       const child = spawn(spawnCmd, spawnArgs, {
         stdio: ["pipe", "pipe", "pipe"],

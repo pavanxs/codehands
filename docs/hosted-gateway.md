@@ -1,5 +1,7 @@
 # Hosted Gateway (Remote Access)
 
+The current trust and security scope is authoritative in [`CURRENT_PLAN.md`](./CURRENT_PLAN.md).
+
 CodeHands already serves HTTP. To access it remotely (from phone, another
 machine, or ChatGPT's web interface), expose port 3100 via a tunnel.
 
@@ -45,6 +47,4 @@ Quick for testing. URL changes on restart (unless paid).
 
 ## Security Note
 
-When exposing publicly, add auth middleware (v2 scope). For now, Tailscale's
-device-level authentication is sufficient — only your approved devices can
-reach the Funnel URL.
+The current CodeHands version assumes one trusted owner and that owner's agents. Built-in endpoint authentication, authorization, and multi-user isolation are deferred to a possible version 3. Do not expose the endpoint to untrusted users. Any tunnel or network-access controls used today are deployment-level protections and do not change CodeHands' global workspace and global process model.

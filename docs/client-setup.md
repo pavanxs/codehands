@@ -49,14 +49,16 @@ ChatGPT's web interface uses Remote MCP, so you need a public URL.
 2. Expose via tunnel: `tailscale funnel 3100`
 3. In ChatGPT settings → Connected Apps → Add MCP Server:
    - URL: `https://your-machine.tail12345.ts.net/mcp`
-4. ChatGPT will discover all 16 tools automatically
+4. ChatGPT will discover the tools exposed by the installed CodeHands build. The authoritative target surface is listed in `CURRENT_PLAN.md`.
+
+For build, restart, snapshot refresh, and fresh-conversation verification, follow [`CHATGPT_PLUGIN_RELEASE_RUNBOOK.md`](./CHATGPT_PLUGIN_RELEASE_RUNBOOK.md).
 
 ## Any MCP Client (Generic)
 
 CodeHands exposes a standard MCP Streamable HTTP endpoint:
 
 - **URL:** `http://localhost:3100/mcp`
-- **Protocol:** MCP 2024-11-05
+- **Protocol:** Negotiated by the installed stable MCP SDK; CodeHands does not hardcode one protocol date
 - **Transport:** Streamable HTTP (POST for requests, SSE for responses)
 - **Health check:** `GET http://localhost:3100/health`
 
@@ -74,5 +76,5 @@ curl -X POST http://localhost:3100/mcp \
 After connecting any client, the AI needs to:
 
 1. Call `workspace_list` to see approved projects
-2. Call `workspace_set` to pick a project
-3. Then use any file/process tool with relative paths
+2. Call `workspace_set` to select the global active workspace. This changes the active workspace shared by all connected agents.
+3. Then use file/process tools with relative paths; `.` means the active workspace root

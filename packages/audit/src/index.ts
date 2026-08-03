@@ -4,18 +4,47 @@ import * as os from "node:os";
 
 export interface AuditEntry {
   timestamp: string;
+  startedAt?: string;
   sessionId: string;
   tool: string;
   params: Record<string, unknown>;
   durationMs: number;
   success: boolean;
   error?: string;
+  outcome?: Record<string, unknown>;
 }
 
 export interface AuditLoggerOptions {
   logDir?: string;
   enabled?: boolean;
   redactContent?: boolean;
+}
+
+function redactValue(value: unknown, key = ""): unknown {
+  if (key === "content" || key === "input" || key === "patch") {
+    return typeof value === "string" ? `[${value.length} chars]` : "[redacted]";
+  }
+  if (key === "dataBase64" || key === "body") return "[redacted]";
+  if (key === "env" || key === "headers") {
+    if (Array.isArray(value)) {
+      return value.map((item) => {
+        if (!item || typeof item !== "object") return "[redacted]";
+        const name = "name" in item ? String(item.name) : "value";
+        return { name, value: "[redacted]" };
+      });
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.keys(value).map((name) => [name, "[redacted]"]));
+    }
+    return "[redacted]";
+  }
+  if (Array.isArray(value)) return value.map((item) => redactValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, childValue]) => [childKey, redactValue(childValue, childKey)]),
+    );
+  }
+  return value;
 }
 
 export class AuditLogger {
@@ -70,22 +99,10 @@ export class AuditLogger {
   }
 
   private redact(entry: AuditEntry): AuditEntry {
-    const redacted = { ...entry, params: { ...entry.params } };
-
-    if (redacted.params["content"] !== undefined) {
-      const content = redacted.params["content"] as string;
-      redacted.params["content"] = `[${content.length} chars]`;
-    }
-
-    if (redacted.params["dataBase64"] !== undefined) {
-      redacted.params["dataBase64"] = "[redacted]";
-    }
-
-    if (redacted.params["body"] !== undefined) {
-      redacted.params["body"] = "[redacted]";
-    }
-
-    return redacted;
+    return {
+      ...entry,
+      params: redactValue(entry.params) as Record<string, unknown>,
+    };
   }
 }
 
@@ -97,10 +114,12 @@ export function createTimedCall<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const start = Date.now();
+  const startedAt = new Date(start).toISOString();
   return fn().then(
     (result) => {
       logger.log({
         timestamp: new Date().toISOString(),
+        startedAt,
         sessionId,
         tool,
         params,
@@ -112,6 +131,7 @@ export function createTimedCall<T>(
     (err) => {
       logger.log({
         timestamp: new Date().toISOString(),
+        startedAt,
         sessionId,
         tool,
         params,

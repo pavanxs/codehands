@@ -1,5 +1,9 @@
 # CodeHands (MCP Coding Harness)
 
+## Documentation source of truth
+
+The authoritative current design, tool contracts, implementation priorities, and open decisions are maintained in [`docs/CURRENT_PLAN.md`](./docs/CURRENT_PLAN.md). Other documents provide focused background or setup guidance and must not duplicate the active plan.
+
 ## The Problem
 
 Web AI assistants like ChatGPT and Claude Chat are incredibly smart — they can
@@ -74,8 +78,7 @@ OpenAI already solved this problem. Their Codex CLI is open-source
 file I/O, terminal execution, sandboxing, Git, and safety — all battle-tested.
 
 So instead of rebuilding the wheel, we use their wheel. We clone Codex CLI
-into our project and talk to it through its public interface. Our code never
-goes inside it. **We never touch Codex's code. Ever.**
+into our project and talk to it through its public interface. Our code never modifies files inside it. Most runtime operations use exec-server JSON-RPC. The patch helper is built outside `vendor/codex/` and links Codex's maintained `codex-apply-patch` crate as a source dependency. **We never edit Codex's code.**
 
 ---
 
@@ -89,17 +92,14 @@ Codex, not inside it.
 
 **Why this matters:** OpenAI actively updates Codex CLI on GitHub. When they
 release improvements — better sandboxing, new features, performance fixes — we
-want those updates instantly. Because we never touched their code, upgrading is
-one command:
+want those updates instantly. Because we never modify their code, upgrading remains straightforward:
 
 ```text
 git submodule update --remote vendor/codex
 ```
 
 No merge conflicts. No broken patches. No "our edit conflicts with their edit."
-The folder just gets replaced with the latest version and everything keeps
-working because our code only talks to Codex through its public interface,
-never by reaching into its internals.
+The folder just gets replaced with the latest version and the CodeHands build and compatibility tests verify that exec-server contracts and the pinned patch-crate integration still compile before release.
 
 ---
 
@@ -130,9 +130,7 @@ Both **ChatGPT** and **Claude Chat** are primary targets.
 - **Communication:** Codex exec-server via JSON-RPC (granular operations)
 - **Transport:** HTTP core + stdio adapter (Option C). HTTP handles multi-client
   and hosted mode. Thin stdio adapter supports clients like Claude Desktop.
-- **MCP tools:** 16 tools mirroring exec-server ops (underscore naming for MCP
-  compatibility: `fs_readFile`, `process_start`, etc.) + `workspace_list`,
-  `workspace_set`.
+- **MCP tools:** Provider-neutral granular tools. The authoritative target tool list, contracts, and pending changes are maintained in `docs/CURRENT_PLAN.md`.
 - **UI:** None. JSON config file for workspace management.
 - **Config location:** `~/.codehands/config.json`
 - **Multi-workspace:** One shared exec-server. CodeHands validates paths against
@@ -154,6 +152,7 @@ Both **ChatGPT** and **Claude Chat** are primary targets.
 - Node.js 22+ installed
 - Git installed
 - pnpm installed (`npm install -g pnpm`)
+- Rust toolchain with Cargo installed (required to build the native patch helper)
 
 ### Installation (one-time)
 
@@ -162,7 +161,7 @@ git clone https://github.com/YOUR_USERNAME/codehands.git
 cd codehands
 npm install -g @openai/codex
 pnpm install
-pnpm run build
+pnpm run build  # first build also compiles the native patch helper
 cd apps/local-agent && npm link && cd ../..
 codehands init
 ```
@@ -219,7 +218,7 @@ git submodule update --remote vendor/codex
 
 ## Current Status
 
-**Working.** All 16 MCP tools implemented and tested end-to-end.
+**Implemented 24-definition surface.** Clients without MCP form elicitation receive 23 tools; clients advertising `elicitation.form` receive all 24, including `request_user_input`. The current source includes `repo_query`, `fs_applyPatch`, `view_image`, bounded `process_run`, structured results, and the existing process/filesystem/HTTP tools. Run `pnpm check` before deployment, then restart CodeHands and refresh the client/plugin snapshot to expose changed schemas.
 
 ```
 codehands start   → Starts server + exec-server on port 3100
@@ -237,13 +236,12 @@ See `docs/client-setup.md` for connecting ChatGPT or Claude.
    autonomous agent loop.
 2. **Codex is used as-is.** Never modify its source. Upgrade by moving the
    submodule pointer.
-3. **All operations go through Codex.** Don't rebuild what Codex already does.
+3. **Reuse Codex execution components.** Routine operations use exec-server. Patch editing uses a CodeHands-owned helper linked to Codex's maintained patch crate; Codex source remains unmodified.
 4. **MCP tools are granular.** Read file, edit file, run command — not "fix my
    app."
 5. **Provider-neutral.** Tool schemas work identically for ChatGPT and Claude.
 6. **Lightweight.** Minimal RAM usage, lean process. No bloat.
-7. **No UI.** This is a headless server. Users already have editors. No
-   dashboards, no electron apps, no windows.
+7. **No CodeHands application UI.** This is a headless server. `request_user_input` may ask the connected MCP client to render one standard form field, but CodeHands ships no dashboard, Electron app, or custom window.
 8. **Low latency.** Responses must be near-instant. This is why local-first
    matters.
 9. **Simple UX.** Easy to set up, easy to use. Avoid complexity wherever

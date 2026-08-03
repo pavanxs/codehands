@@ -15,6 +15,7 @@ import { createServer } from "./server.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 function parseTunnelFlag(): string | null {
   for (let i = 1; i < args.length; i++) {
@@ -156,19 +157,36 @@ async function runStart() {
 
   let tunnelProcess: ChildProcess | null = null;
 
-  httpServer.listen(config.port, () => {
-    console.log(`CodeHands MCP server running on http://localhost:${config.port}/mcp`);
-    console.log(`Health check: http://localhost:${config.port}/health`);
-    console.log(`Workspaces: ${config.workspaces.length > 0 ? config.workspaces.join(", ") : "(none)"}`);
-    if (hasBatchFlag()) console.log(`Batch tool: enabled`);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: NodeJS.ErrnoException) => reject(error);
+      httpServer.once("error", onError);
+      httpServer.listen(config.port, () => {
+        httpServer.off("error", onError);
+        console.log(`CodeHands MCP server running on http://localhost:${config.port}/mcp`);
+        console.log(`Health check: http://localhost:${config.port}/health`);
+        console.log(`Workspaces: ${config.workspaces.length > 0 ? config.workspaces.join(", ") : "(none)"}`);
+        if (hasBatchFlag()) console.log(`Batch tool: enabled`);
 
-    const tunnelProvider = parseTunnelFlag();
-    if (tunnelProvider === "tailscale") {
-      tunnelProcess = startTailscaleFunnel(config.port);
-    } else if (tunnelProvider) {
-      console.error(`Unknown tunnel provider: "${tunnelProvider}". Supported: tailscale`);
+        const tunnelProvider = parseTunnelFlag();
+        if (tunnelProvider === "tailscale") {
+          tunnelProcess = startTailscaleFunnel(config.port);
+        } else if (tunnelProvider) {
+          console.error(`Unknown tunnel provider: "${tunnelProvider}". Supported: tailscale`);
+        }
+        resolve();
+      });
+    });
+  } catch (error) {
+    await adapter.stop().catch(() => undefined);
+    const listenError = error as NodeJS.ErrnoException;
+    if (listenError.code === "EADDRINUSE") {
+      throw new Error(
+        `Port ${config.port} is already in use. Stop the existing CodeHands server or change the port in ${getConfigPath()}.`,
+      );
     }
-  });
+    throw error;
+  }
 
   const shutdown = async () => {
     console.log("\nShutting down...");
@@ -196,8 +214,21 @@ async function handlePost(
   adapter: CodexAdapter,
   transports: Map<string, StreamableHTTPServerTransport>,
 ) {
-  const body = await readBody(req);
-  const parsed = JSON.parse(body);
+  let parsed: unknown;
+  try {
+    const body = await readBody(req, MAX_REQUEST_BODY_BYTES);
+    parsed = JSON.parse(body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message === "Request body too large" ? 413 : 400;
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      jsonrpc: "2.0",
+      error: { code: -32700, message },
+      id: null,
+    }));
+    return;
+  }
 
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
@@ -265,11 +296,24 @@ async function handleDelete(
   await transports.get(sessionId)!.handleRequest(req, res);
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => { data += chunk; });
-    req.on("end", () => resolve(data));
+    let bytes = 0;
+    let tooLarge = false;
+
+    req.on("data", (chunk: Buffer | string) => {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > maxBytes) {
+        tooLarge = true;
+        return;
+      }
+      if (!tooLarge) data += chunk.toString();
+    });
+    req.on("end", () => {
+      if (tooLarge) reject(new Error("Request body too large"));
+      else resolve(data);
+    });
     req.on("error", reject);
   });
 }
@@ -442,6 +486,11 @@ async function main() {
     case "doctor":
       await runDoctor();
       break;
+    case "logs": {
+      const { runLogs } = await import("./logs.js");
+      await runLogs();
+      break;
+    }
     default:
       console.log("CodeHands - MCP server for AI-powered coding");
       console.log("");
@@ -455,6 +504,7 @@ async function main() {
       console.log("  codehands add <path>                Add a workspace to config");
       console.log("  codehands config                    Open config in editor");
       console.log("  codehands doctor                    Check system health");
+      console.log("  codehands logs                      Follow live MCP calls in readable grouped entries");
       console.log("");
       console.log("Flags:");
       console.log("  --batch                Enable batch tool (run multiple tools in one call)");

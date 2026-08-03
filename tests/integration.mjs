@@ -1,12 +1,20 @@
+import * as os from "node:os";
+import * as path from "node:path";
+
 /**
- * Comprehensive MCP integration test.
- * Exercises all 16 tools with real calls to the running server.
+ * Comprehensive cross-platform MCP integration test.
  *
- * Usage: Start "codehands start" first, then run "node tests/integration.mjs"
+ * Usage: start CodeHands first, then run:
+ *   node tests/integration.mjs
  */
 
-const BASE = "http://localhost:3100/mcp";
-const HEADERS = { "Content-Type": "application/json", Accept: "application/json, text/event-stream" };
+const BASE = process.env.CODEHANDS_MCP_URL ?? "http://localhost:3100/mcp";
+const HEALTH_URL = new URL("/health", BASE).toString();
+const HEADERS = {
+  "Content-Type": "application/json",
+  Accept: "application/json, text/event-stream",
+};
+
 let sessionId = null;
 let nextId = 1;
 let passed = 0;
@@ -19,42 +27,104 @@ async function send(method, params) {
     : { jsonrpc: "2.0", method };
   const headers = { ...HEADERS };
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
-  const res = await fetch(BASE, { method: "POST", headers, body: JSON.stringify(body) });
-  const text = await res.text();
-  const sid = res.headers.get("mcp-session-id");
-  if (sid) sessionId = sid;
-  const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+
+  const response = await fetch(BASE, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  const returnedSessionId = response.headers.get("mcp-session-id");
+  if (returnedSessionId) sessionId = returnedSessionId;
+
+  const lines = text.split("\n").filter((line) => line.startsWith("data: "));
   if (lines.length === 0) return null;
-  const data = lines.map((l) => JSON.parse(l.slice(6)));
+  const data = lines.map((line) => JSON.parse(line.slice(6)));
   return data[0]?.result ?? data[0]?.error ?? null;
 }
 
+const MULTI_REQUEST_TOOLS = new Set([
+  "fs_readFile", "fs_writeFile", "fs_createDirectory", "fs_readDirectory",
+  "fs_walk", "fs_remove", "fs_copy", "fs_getMetadata", "process_run",
+  "process_start", "process_read", "process_write", "process_signal",
+  "process_terminate", "http_request",
+]);
+
 async function callTool(name, args = {}) {
-  return send("tools/call", { name, arguments: args });
+  const actualArgs = MULTI_REQUEST_TOOLS.has(name) && !Array.isArray(args.requests)
+    ? { requests: [args] }
+    : args;
+  const result = await send("tools/call", { name, arguments: actualArgs });
+  if (!MULTI_REQUEST_TOOLS.has(name) || !result?.content?.[0]?.text) return result;
+  try {
+    const parsed = JSON.parse(result.content[0].text);
+    const item = parsed?.results?.[0];
+    if (!item) return result;
+    return {
+      ...result,
+      isError: item.success === false,
+      content: [{ type: "text", text: JSON.stringify(item) }],
+    };
+  } catch {
+    return result;
+  }
 }
 
 function getContent(result) {
   if (!result?.content?.[0]?.text) return null;
-  try { return JSON.parse(result.content[0].text); } catch { return result.content[0].text; }
+  try {
+    return JSON.parse(result.content[0].text);
+  } catch {
+    return result.content[0].text;
+  }
 }
 
 function assert(condition, testName, detail = "") {
   if (condition) {
     passed++;
-    console.log(`  ✓ ${testName}`);
+    console.log(`  âœ“ ${testName}`);
   } else {
     failed++;
-    console.log(`  ✗ ${testName} ${detail}`);
+    console.log(`  âœ— ${testName}${detail ? ` â€” ${detail}` : ""}`);
   }
 }
 
-async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-// ─────────────────────────────────────────────────────────
+async function readUntilExit(processId, attempts = 20) {
+  let afterSeq;
+  let output = "";
+  let latest = null;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    latest = getContent(await callTool("process_read", {
+      processId,
+      afterSeq,
+      waitMs: 500,
+    }));
+    if (!latest || typeof latest !== "object") return latest;
+    const chunkOutput = Array.isArray(latest.chunks) ? latest.chunks.map((chunk) => chunk.text).join("") : "";
+    output += chunkOutput;
+    if (typeof latest.nextAfterSeq === "number") afterSeq = latest.nextAfterSeq;
+    if (latest.closed) return { ...latest, output };
+  }
+
+  return latest ? { ...latest, output } : latest;
+}
+
+async function startPortableLongProcess() {
+  return callTool("process_start", {
+    command: "node",
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    shell: false,
+  });
+}
+
 async function main() {
-  console.log("=== MCP Integration Tests ===\n");
+  console.log(`=== MCP Integration Tests (${process.platform}) ===\n`);
 
-  // --- Setup ---
   console.log("[Setup] Initialize");
   const init = await send("initialize", {
     protocolVersion: "2024-11-05",
@@ -65,260 +135,228 @@ async function main() {
   assert(init?.protocolVersion === "2024-11-05", "Protocol version correct");
   await send("notifications/initialized");
 
-  // --- tools/list ---
   console.log("\n[tools/list]");
   const tools = await send("tools/list", {});
-  assert(tools?.tools?.length === 16, "Exactly 16 tools registered", `got ${tools?.tools?.length}`);
-  const toolNames = tools.tools.map(t => t.name);
+  const toolNames = tools?.tools?.map((tool) => tool.name) ?? [];
+  assert(toolNames.length >= 20, "Core tools registered", `got ${toolNames.length}`);
   assert(toolNames.includes("fs_readFile"), "Has fs_readFile");
   assert(toolNames.includes("process_start"), "Has process_start");
+  assert(toolNames.includes("process_run"), "Has process_run");
   assert(toolNames.includes("workspace_list"), "Has workspace_list");
   assert(toolNames.includes("http_request"), "Has http_request");
+  assert(toolNames.includes("process_signal"), "Has process_signal");
 
-  // --- workspace_list ---
-  console.log("\n[workspace_list]");
-  const wsList = callTool("workspace_list");
-  const wsData = getContent(await wsList);
-  assert(Array.isArray(wsData?.workspaces), "Returns workspaces array");
-  assert(wsData.workspaces.length > 0, "At least one workspace configured");
+  console.log("\n[workspace]");
+  const workspaceData = getContent(await callTool("workspace_list"));
+  assert(Array.isArray(workspaceData?.workspaces), "Returns workspaces array");
+  assert(workspaceData?.workspaces?.length > 0, "At least one workspace configured");
 
-  // --- workspace_set ---
-  console.log("\n[workspace_set]");
-  const wsSet = await callTool("workspace_set", { workspace: "mcp-coding-harness" });
-  const wsSetData = getContent(wsSet);
-  assert(wsSetData?.set === true, "workspace_set returns set: true");
-  assert(wsSetData?.activeWorkspace?.includes("mcp-coding-harness"), "Active workspace set correctly");
+  const workspace = workspaceData.workspaces[0];
+  const workspaceName = path.basename(workspace);
+  const setByName = getContent(await callTool("workspace_set", { workspace: workspaceName }));
+  assert(setByName?.set === true, "workspace_set by name works");
+  const setByPath = getContent(await callTool("workspace_set", { workspace }));
+  assert(setByPath?.set === true, "workspace_set by full path works");
+  const badWorkspace = await callTool("workspace_set", { workspace: "nonexistent-project-xyz" });
+  assert(badWorkspace?.isError === true, "workspace_set rejects unknown workspace");
 
-  // workspace_set with full path
-  const wsSet2 = await callTool("workspace_set", { workspace: "D:/projects/mcp-coding-harness" });
-  const wsSet2Data = getContent(wsSet2);
-  assert(wsSet2Data?.set === true, "workspace_set with full path works");
+  console.log("\n[file system]");
+  const directory = getContent(await callTool("fs_readDirectory", { path: "." }));
+  assert(Array.isArray(directory?.entries), "readDirectory returns entries");
+  assert(directory.entries.some((entry) => entry.fileName === "package.json"), "Root has package.json");
 
-  // workspace_set with nonexistent
-  const wsSetBad = await callTool("workspace_set", { workspace: "nonexistent-project-xyz" });
-  assert(wsSetBad?.isError === true, "workspace_set rejects unknown workspace");
+  const packageFile = getContent(await callTool("fs_readFile", { path: "package.json" }));
+  assert(typeof packageFile?.content === "string", "readFile returns content");
+  assert(packageFile.content.includes("mcp-coding-harness"), "Read content is correct");
 
-  // --- fs_readDirectory ---
-  console.log("\n[fs_readDirectory]");
-  const dir = await callTool("fs_readDirectory", { path: "." });
-  const dirData = getContent(dir);
-  assert(Array.isArray(dirData?.entries), "readDirectory returns entries array");
-  assert(dirData.entries.some(e => e.fileName === "package.json"), "Root has package.json");
-  assert(dirData.entries.some(e => e.fileName === "apps" && e.isDirectory), "Root has apps/");
+  const missingFile = await callTool("fs_readFile", { path: "this-file-does-not-exist.xyz" });
+  assert(missingFile?.isError === true, "Missing file returns an error");
 
-  // Subdirectory
-  const subDir = await callTool("fs_readDirectory", { path: "packages" });
-  const subDirData = getContent(subDir);
-  assert(Array.isArray(subDirData?.entries), "Subdirectory listing works");
-  assert(subDirData.entries.some(e => e.fileName === "mcp-tools"), "packages/ has mcp-tools");
-
-  // --- fs_readFile ---
-  console.log("\n[fs_readFile]");
-  const file = await callTool("fs_readFile", { path: "package.json" });
-  const fileData = getContent(file);
-  assert(typeof fileData?.content === "string", "readFile returns content string");
-  assert(fileData.content.includes("mcp-coding-harness"), "Content matches expected file");
-
-  // Read nested file
-  const nested = await callTool("fs_readFile", { path: "apps/local-agent/package.json" });
-  const nestedData = getContent(nested);
-  assert(nestedData?.content?.includes("@codehands/local-agent"), "Nested file read works");
-
-  // Read nonexistent file
-  const noFile = await callTool("fs_readFile", { path: "this-file-does-not-exist.xyz" });
-  assert(noFile?.isError === true, "readFile on missing file returns error");
-
-  // --- fs_writeFile + fs_readFile (round trip) ---
-  console.log("\n[fs_writeFile]");
+  const temporaryFile = "tests/.tmp-integration-file.txt";
+  const temporaryDirectory = "tests/.tmp-integration-directory";
   const testContent = `test-${Date.now()}`;
-  const write = await callTool("fs_writeFile", { path: "tests/.tmp-test-file.txt", content: testContent });
-  const writeData = getContent(write);
-  assert(writeData?.written === true, "writeFile returns written: true");
 
-  // Verify by reading back
-  const readBack = await callTool("fs_readFile", { path: "tests/.tmp-test-file.txt" });
-  const readBackData = getContent(readBack);
-  assert(readBackData?.content === testContent, "Write then read returns same content");
+  const write = getContent(await callTool("fs_writeFile", {
+    path: temporaryFile,
+    content: testContent,
+  }));
+  assert(write?.written === true, "writeFile succeeds");
+  const readBack = getContent(await callTool("fs_readFile", { path: temporaryFile }));
+  assert(readBack?.content === testContent, "Write/read round trip matches");
 
-  // --- fs_getMetadata ---
-  console.log("\n[fs_getMetadata]");
-  const meta = await callTool("fs_getMetadata", { path: "package.json" });
-  const metaData = getContent(meta);
-  assert(metaData?.isFile === true || metaData?.type === "file", "getMetadata identifies file");
-  assert(typeof metaData?.size === "number" || typeof metaData?.len === "number", "getMetadata has size");
+  const metadata = getContent(await callTool("fs_getMetadata", { path: temporaryFile }));
+  assert(metadata?.isFile === true, "getMetadata identifies a file");
+  assert(typeof metadata?.size === "number", "getMetadata returns file size");
 
-  // --- fs_createDirectory ---
-  console.log("\n[fs_createDirectory]");
-  const mkdir = await callTool("fs_createDirectory", { path: "tests/.tmp-test-dir" });
-  const mkdirData = getContent(mkdir);
-  assert(!mkdir?.isError, "createDirectory succeeds");
-
-  // --- fs_copy ---
-  console.log("\n[fs_copy]");
-  const cp = await callTool("fs_copy", {
-    sourcePath: "tests/.tmp-test-file.txt",
-    destinationPath: "tests/.tmp-test-dir/copied.txt",
+  const makeDirectory = await callTool("fs_createDirectory", { path: temporaryDirectory });
+  assert(!makeDirectory?.isError, "createDirectory succeeds");
+  const copy = await callTool("fs_copy", {
+    sourcePath: temporaryFile,
+    destinationPath: `${temporaryDirectory}/copied.txt`,
   });
-  assert(!cp?.isError, "copy succeeds");
+  assert(!copy?.isError, "copy succeeds");
+  const copied = getContent(await callTool("fs_readFile", {
+    path: `${temporaryDirectory}/copied.txt`,
+  }));
+  assert(copied?.content === testContent, "Copied content matches");
 
-  // Verify copy exists
-  const readCopy = await callTool("fs_readFile", { path: "tests/.tmp-test-dir/copied.txt" });
-  const copyData = getContent(readCopy);
-  assert(copyData?.content === testContent, "Copied file has correct content");
+  const walk = await callTool("fs_walk", { path: "tests", maxDepth: 2 });
+  assert(!walk?.isError, "fs_walk succeeds");
 
-  // --- fs_walk ---
-  console.log("\n[fs_walk]");
-  const walk = await callTool("fs_walk", { path: "tests" });
-  const walkData = getContent(walk);
-  assert(!walk?.isError, "walk succeeds");
+  await callTool("fs_remove", { path: temporaryDirectory, recursive: true, force: true });
+  await callTool("fs_remove", { path: temporaryFile, force: true });
+  const removed = await callTool("fs_readFile", { path: temporaryFile });
+  assert(removed?.isError === true, "Temporary files are removed");
 
-  // --- fs_remove ---
-  console.log("\n[fs_remove]");
-  const rm = await callTool("fs_remove", { path: "tests/.tmp-test-dir", recursive: true, force: true });
-  assert(!rm?.isError, "remove directory succeeds");
-  const rm2 = await callTool("fs_remove", { path: "tests/.tmp-test-file.txt", force: true });
-  assert(!rm2?.isError, "remove file succeeds");
+  console.log("\n[process execution]");
+  const shellProcess = getContent(await callTool("process_start", {
+    command: "echo integration-test-works",
+    shell: true,
+  }));
+  const shellResult = await readUntilExit(shellProcess.processId);
+  assert(shellResult?.output?.includes("integration-test-works"), "Platform shell command works");
+  assert(shellResult?.exitCode === 0, "Platform shell command exits successfully");
 
-  // Verify removal
-  const gone = await callTool("fs_readFile", { path: "tests/.tmp-test-file.txt" });
-  assert(gone?.isError === true, "Removed file is actually gone");
+  const gitProcess = getContent(await callTool("process_start", {
+    command: "git",
+    args: ["status", "--short"],
+    shell: false,
+  }));
+  const gitResult = await readUntilExit(gitProcess.processId);
+  assert(gitResult?.exitCode === 0, "git with args[] exits successfully");
 
-  // --- process_start ---
-  console.log("\n[process_start]");
+  const npmProcess = getContent(await callTool("process_start", {
+    command: "npm",
+    args: ["--version"],
+    shell: false,
+  }));
+  const npmResult = await readUntilExit(npmProcess.processId);
+  assert(npmResult?.exitCode === 0, "npm with args[] works on this platform");
+  assert(/^\d+\.\d+/.test(npmResult?.output?.trim() ?? ""), "npm returns a version");
 
-  // Simple echo
-  const echo = await callTool("process_start", { command: "echo integration-test-works" });
-  const echoData = getContent(echo);
-  assert(echoData?.started === true, "process_start echo succeeds");
-  assert(typeof echoData?.processId === "string", "Returns processId");
+  const exactArgs = getContent(await callTool("process_start", {
+    command: "node",
+    args: ["-p", "process.argv.slice(1).length", "A B"],
+    shell: false,
+  }));
+  const exactArgsResult = await readUntilExit(exactArgs.processId);
+  assert(exactArgsResult?.output?.trim() === "1", "Process argument boundaries are preserved");
 
-  await sleep(500);
+  const stdinProcess = getContent(await callTool("process_start", {
+    command: "node",
+    args: [
+      "-e",
+      "process.stdin.once('data', data => { console.log(data.toString().trim()); process.exit(0); })",
+    ],
+    shell: false,
+  }));
+  let writeStatus = null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    writeStatus = getContent(await callTool("process_write", {
+      processId: stdinProcess.processId,
+      input: "stdin-works\n",
+    }));
+    if (writeStatus?.status === "accepted") break;
+    await sleep(100);
+  }
+  const stdinResult = await readUntilExit(stdinProcess.processId);
+  assert(writeStatus?.status === "accepted", "process_write accepts stdin");
+  assert(stdinResult?.output?.includes("stdin-works"), "Non-TTY stdin reaches the process");
 
-  // --- process_read ---
-  console.log("\n[process_read]");
-  const read = await callTool("process_read", { processId: echoData.processId });
-  const readData = getContent(read);
-  assert(readData?.output?.includes("integration-test-works"), "process_read returns echo output");
-  assert(readData?.exited === true, "Echo process exited");
+  const longProcess = getContent(await startPortableLongProcess());
+  await sleep(250);
+  const terminate = await callTool("process_terminate", { processId: longProcess.processId });
+  assert(!terminate?.isError, "process_terminate succeeds");
+  const terminatedResult = await readUntilExit(longProcess.processId);
+  assert(
+    terminatedResult?.exited === true || terminatedResult?.closed === true,
+    "Terminated process is reported as stopped",
+  );
 
-  // git status (the Claude Desktop bug scenario)
-  const git = await callTool("process_start", { command: "git", args: ["status", "--short"] });
-  const gitData = getContent(git);
-  assert(gitData?.started === true, "git status --short starts");
-  await sleep(1500);
-  const gitRead = await callTool("process_read", { processId: gitData.processId });
-  const gitOutput = getContent(gitRead);
-  assert(gitOutput?.exited === true, "git status exits");
-  assert(gitOutput?.exitCode === 0, "git status exit code 0", `got ${gitOutput?.exitCode}`);
+  {
+    const signalProcess = getContent(await startPortableLongProcess());
+    await sleep(250);
+    const signalResult = await callTool("process_signal", {
+      processId: signalProcess.processId,
+      signal: "interrupt",
+    });
+    if (signalResult?.isError) {
+      const message = signalResult.content?.[0]?.text ?? "";
+      assert(
+        process.platform === "win32" && /not supported/i.test(message),
+        "Unsupported interrupt is reported by the Windows backend",
+        message,
+      );
+      await callTool("process_terminate", { processId: signalProcess.processId });
+    } else {
+      assert(true, "process_signal succeeds on this backend");
+    }
+    const interrupted = await readUntilExit(signalProcess.processId);
+    assert(
+      interrupted?.exited === true || interrupted?.closed === true,
+      "Signaled or terminated process stops",
+    );
+  }
 
-  // npm --version
-  const npm = await callTool("process_start", { command: "npm --version" });
-  const npmData = getContent(npm);
-  assert(npmData?.started === true, "npm --version starts");
-  await sleep(1500);
-  const npmRead = await callTool("process_read", { processId: npmData.processId });
-  const npmOutput = getContent(npmRead);
-  assert(npmOutput?.exited === true, "npm exits");
-  assert(npmOutput?.exitCode === 0, "npm exit code 0");
+  console.log("\n[batch safety]");
+  const batchResult = getContent(await callTool("batch", {
+    calls: [{ tool: "workspace_set", args: { workspace } }],
+  }));
+  assert(batchResult?.results?.[0]?.success === false, "workspace_set is rejected inside batch");
 
-  // node --version
-  const node = await callTool("process_start", { command: "node --version" });
-  const nodeData = getContent(node);
-  assert(nodeData?.started === true, "node --version starts");
-  await sleep(1000);
-  const nodeRead = await callTool("process_read", { processId: nodeData.processId });
-  const nodeOutput = getContent(nodeRead);
-  assert(nodeOutput?.output?.startsWith("v"), "node outputs version string");
+  console.log("\n[HTTP]");
+  const health = getContent(await callTool("http_request", {
+    method: "GET",
+    url: HEALTH_URL,
+  }));
+  assert(health?.status === 200, "HTTP GET returns 200");
+  assert(health?.body?.includes("ok"), "HTTP response contains health status");
 
-  // Command with args array
-  const withArgs = await callTool("process_start", { command: "git", args: ["log", "--oneline", "-3"] });
-  const withArgsData = getContent(withArgs);
-  assert(withArgsData?.started === true, "git log with args array starts");
-  await sleep(1500);
-  const argsRead = await callTool("process_read", { processId: withArgsData.processId });
-  const argsOutput = getContent(argsRead);
-  assert(argsOutput?.exitCode === 0, "git log with args exits cleanly");
-  assert(argsOutput?.output?.length > 5, "git log produces output");
+  console.log("\n[command policy]");
+  const shutdown = await callTool("process_start", { command: "shutdown -h now", shell: true });
+  assert(shutdown?.isError === true, "shutdown command is blocked");
+  if (process.platform === "win32") {
+    const format = await callTool("process_start", { command: "format C:", shell: true });
+    const diskpart = await callTool("process_start", { command: "diskpart", shell: true });
+    assert(format?.isError === true, "Windows format command is blocked");
+    assert(diskpart?.isError === true, "Windows diskpart command is blocked");
+  } else {
+    const removeRoot = await callTool("process_start", { command: "rm -rf /", shell: true });
+    assert(removeRoot?.isError === true, "POSIX root removal is blocked");
+  }
 
-  // --- process_write + process_terminate ---
-  console.log("\n[process_write / process_terminate]");
-  const longProc = await callTool("process_start", { command: "ping -n 30 127.0.0.1" });
-  const longData = getContent(longProc);
-  assert(longData?.started === true, "Long-running ping starts");
-  await sleep(1000);
+  console.log("\n[path security]");
+  const outsideAbsolute = path.join(
+    os.tmpdir(),
+    `codehands-outside-${process.pid}-${Date.now()}`,
+    "secret.txt",
+  );
+  const outsideRead = await callTool("fs_readFile", { path: outsideAbsolute });
+  assert(outsideRead?.isError === true, "Absolute path outside workspace is blocked");
 
-  // Terminate it
-  const term = await callTool("process_terminate", { processId: longData.processId });
-  assert(!term?.isError, "process_terminate succeeds");
-  await sleep(500);
-  const termRead = await callTool("process_read", { processId: longData.processId });
-  const termOutput = getContent(termRead);
-  assert(termOutput?.exited === true, "Terminated process shows exited");
+  const traversalPath = path.join("..", "..", `codehands-outside-${Date.now()}`, "secret.txt");
+  const traversalRead = await callTool("fs_readFile", { path: traversalPath });
+  assert(traversalRead?.isError === true, "Relative path traversal is blocked");
 
-  // --- process_signal ---
-  console.log("\n[process_signal]");
-  const sigProc = await callTool("process_start", { command: "ping -n 30 127.0.0.1" });
-  const sigData = getContent(sigProc);
-  assert(sigData?.started === true, "Signal test process starts");
-  await sleep(500);
-  const sig = await callTool("process_signal", { processId: sigData.processId, signal: "interrupt" });
-  assert(!sig?.isError, "process_signal succeeds");
-  await sleep(1000);
-  const sigRead = await callTool("process_read", { processId: sigData.processId });
-  const sigOutput = getContent(sigRead);
-  assert(sigOutput?.exited === true, "Signaled process exits");
+  const outsideCwd = await callTool("process_start", {
+    command: "node",
+    args: ["--version"],
+    shell: false,
+    cwd: os.tmpdir(),
+  });
+  assert(outsideCwd?.isError === true, "Process cwd outside workspace is blocked");
 
-  // --- http_request ---
-  console.log("\n[http_request]");
-  const http = await callTool("http_request", { method: "GET", url: "http://localhost:3100/health" });
-  const httpData = getContent(http);
-  assert(httpData?.status === 200, "HTTP GET returns 200");
-  assert(httpData?.body?.includes("ok"), "HTTP response body has 'ok'");
+  const emptyCommand = await callTool("process_start", { command: "", shell: false });
+  assert(emptyCommand?.isError === true, "Empty command is rejected");
 
-  // --- Blocked commands ---
-  console.log("\n[Blocked commands]");
-  const blocked1 = await callTool("process_start", { command: "rm -rf /" });
-  assert(blocked1?.isError === true, "rm -rf / is blocked");
-
-  const blocked2 = await callTool("process_start", { command: "format C:" });
-  assert(blocked2?.isError === true, "format C: is blocked");
-
-  const blocked3 = await callTool("process_start", { command: "shutdown -h now" });
-  assert(blocked3?.isError === true, "shutdown is blocked");
-
-  const blocked4 = await callTool("process_start", { command: "diskpart" });
-  assert(blocked4?.isError === true, "diskpart is blocked");
-
-  // --- Path security ---
-  console.log("\n[Path security]");
-  const outside = await callTool("fs_readFile", { path: "C:/Windows/System32/drivers/etc/hosts" });
-  assert(outside?.isError === true, "Reading outside workspace is blocked");
-
-  const traversal = await callTool("fs_readFile", { path: "../../Windows/System32/config/SAM" });
-  assert(traversal?.isError === true, "Path traversal is blocked");
-
-  // --- Edge cases ---
-  console.log("\n[Edge cases]");
-  const noWorkspace = await callTool("process_start", { command: "echo test", cwd: "C:/Windows" });
-  assert(noWorkspace?.isError === true, "cwd outside workspace rejected");
-
-  // Empty command
-  const emptyCmd = await callTool("process_start", { command: "" });
-  const emptyData = getContent(emptyCmd);
-  // Should either fail or start (shell handles empty)
-  assert(emptyCmd !== null, "Empty command doesn't crash server");
-
-  // --- Summary ---
   console.log(`\n${"=".repeat(50)}`);
   console.log(`RESULTS: ${passed} passed, ${failed} failed, ${passed + failed} total`);
-  console.log(`${"=".repeat(50)}`);
+  console.log("=".repeat(50));
 
-  if (failed > 0) {
-    process.exit(1);
-  }
+  if (failed > 0) process.exit(1);
 }
 
-main().catch((err) => {
-  console.error("Test runner crashed:", err.message);
+main().catch((error) => {
+  console.error("Test runner crashed:", error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

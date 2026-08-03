@@ -83,6 +83,17 @@ broken patches. If you modify Codex source, upgrades become impossible.
 
 ---
 
+## Documentation Source of Truth
+
+Before planning or implementing a contract change, read `docs/CURRENT_PLAN.md`. It is the single authoritative source for accepted design decisions, target tool contracts, deferred work, and open questions.
+
+- Update `docs/CURRENT_PLAN.md` when a decision changes.
+- Do not create a separate `priorities/` design tree or another competing plan.
+- Keep setup, architecture, and threat-model documents focused; link to the current plan instead of duplicating evolving contracts.
+- Runtime source describes implemented behavior; `docs/CURRENT_PLAN.md` describes the agreed target until implementation catches up.
+
+---
+
 ## Architecture Rules
 
 1. **This server does NOT run an agent loop.** The web AI controls step by step.

@@ -138,33 +138,17 @@ Then in Claude.ai or ChatGPT settings, add the MCP server URL:
 The AI decides what to do. CodeHands validates it's safe. The exec-server
 executes it.
 
-## Available Tools (what the AI can do)
+## Available Tools
 
-| Tool | What it does |
-| --- | --- |
-| fs_readFile | Read a file |
-| fs_writeFile | Write/create a file |
-| fs_createDirectory | Create folders |
-| fs_readDirectory | List folder contents |
-| fs_walk | Walk directory tree |
-| fs_remove | Delete files/folders |
-| fs_copy | Copy files |
-| fs_getMetadata | Get file info |
-| process_start | Run a terminal command |
-| process_read | Read command output |
-| process_write | Send input to a command |
-| process_terminate | Kill a command |
-| process_signal | Send Ctrl+C |
-| http_request | Fetch a URL |
-| workspace_list | List available projects |
-| workspace_set | Switch active project |
+The connected client discovers the tools exposed by the installed build through MCP `tools/list`. This tutorial intentionally does not maintain a duplicate tool table. The authoritative target surface, multi-item contracts, and pending additions are in [`CURRENT_PLAN.md`](./CURRENT_PLAN.md).
 
 ## Security
 
-- **Workspace isolation:** AI can only access folders you explicitly approve
+- **Workspace boundary:** operations are restricted to folders you explicitly configure; the active workspace is global across connected agents
 - **Blocked commands:** Dangerous commands (rm -rf /, format C:, etc.) are rejected
 - **No API keys needed:** Everything runs locally, no cloud calls
 - **Audit log:** Every tool call is logged to `~/.codehands/logs/`
+- **Readable live logs:** Run `codehands logs`; `idle` is time before a call, `took`/`elapsed` is active execution, `long-poll` is an intentional process-output wait, and multi-request or batch calls show per-child status and duration on indented lines
 
 ## Updating
 

@@ -1,92 +1,63 @@
 # Architecture
 
+This document describes the stable system boundary. Active tool contracts, implementation priorities, and open decisions are authoritative in [`CURRENT_PLAN.md`](./CURRENT_PLAN.md).
+
 ## Product boundary
 
-CodeHands is a thin, policy-controlled MCP server that gives web AI assistants
-(ChatGPT, Claude Chat) step-by-step control over your local development machine.
-
-The web AI is the brain — it decides what to read, edit, and run. Codex
-exec-server is the executor — it performs the actual file I/O, terminal
-commands, and sandboxing. CodeHands is the router and policy gate between them.
+CodeHands is a thin, policy-controlled MCP bridge that gives AI clients step-by-step access to a development machine.
 
 ```text
-Web AI (ChatGPT / Claude)
-  │ MCP tool calls (Streamable HTTP or stdio)
-  ▼
-CodeHands (TypeScript, HTTP core)
-  │ validates workspace + blocked commands
-  │ JSON-RPC
-  ▼
-Codex exec-server (lean Rust process)
-  │ reads/writes files, runs commands, sandboxes
-  ▼
-Local filesystem / terminal
+AI client
+  -> MCP tool call
+CodeHands
+  -> validation, policy, schemas, audit, result formatting
+Codex exec-server
+  -> filesystem, process, and HTTP execution
+Local machine
 ```
 
-The web AI sends individual tool calls (read file, edit file, run command). This
-server never runs an autonomous agent loop.
+The AI client controls the agent loop. CodeHands does not independently plan or chain coding work.
+
+## Component responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| `apps/local-agent` | Hosts the MCP server, manages the Codex adapter, exposes tools, and maintains the current global workspace/process view. |
+| `packages/mcp-tools` | Defines public tool names, input schemas, output schemas, handlers, result envelopes, and continuation fields. |
+| `packages/codex-adapter` | Speaks Codex exec-server JSON-RPC and maps CodeHands requests to Codex protocol operations. |
+| `native/codehands-apply-patch` | CodeHands-owned JSON helper that links Codex's maintained patch and filesystem crates, performs full preflight/confinement, and reports structured committed deltas. |
+| `packages/policy-engine` | Resolves and validates workspace paths and applies command policy. |
+| `packages/audit` | Records redacted parameters, exact call start/completion timing, and bounded status/duration summaries for aggregate execution tools. |
+| `vendor/codex` | Unmodified upstream Codex source and protocol implementation. |
 
 ## Transport
 
-**HTTP core (Streamable HTTP)** is the primary transport. One CodeHands server
-instance handles multiple AI clients simultaneously on multiple workspaces.
+Streamable HTTP is the primary shared transport. Stdio is available for local clients that require it. Both transports expose the same tool implementation.
 
-**stdio adapter** wraps the HTTP core for clients that only support stdio (e.g.,
-Claude Desktop). The adapter connects internally to the HTTP server.
+The transport model is not being redesigned in the current version. Current work is limited to lifecycle correctness, deterministic tool definitions, schemas, and diagnostics.
 
-## Access modes
+## Global workspace and process model
 
-- **Local (HTTP on localhost):** Primary mode. Multiple AI chats connect to one
-  server. ~1-3ms latency overhead.
-- **Local (stdio adapter):** For stdio-only clients. Wraps HTTP core internally.
-- **Hosted (tunnel):** Same HTTP port exposed via any tunnel (Tailscale Funnel,
-  Cloudflare, ngrok). ~50-200ms latency depending on tunnel. Auth required (v2).
+The current version intentionally uses a global model for one trusted owner and that owner's agents:
 
-## Components
+- One active workspace is shared across connected agents.
+- A fresh server selects the first configured workspace automatically when the prior process-global selection is absent or no longer approved.
+- The process registry is global.
+- Every connected agent can access every configured repository.
+- Every connected agent can list, read, write to, signal, or terminate every CodeHands-managed process.
+- Processes do not belong to a session, connector, user, or workspace.
 
-| Component | Responsibility | Must not do |
-| --- | --- | --- |
-| Local agent (HTTP core) | Hosts MCP tools, handles multiple concurrent AI connections, spawns/manages exec-server | Run its own agent loop |
-| stdio adapter | Wraps HTTP core for stdio-only clients | Duplicate server logic |
-| Policy engine | Validates paths against approved workspaces, enforces blocked commands | Authorize arbitrary paths |
-| Codex adapter | JSON-RPC client for exec-server. Spawns it, manages connection, auto-restarts (3 retries) | Parse terminal text |
-| MCP tools | All exec-server ops exposed as MCP tools (fs/readFile, fs/writeFile, process/start, etc.) | Add autonomous logic |
-| `vendor/codex` | Unmodified upstream source, used as live executor | Contain harness modifications |
+Per-user state, process ownership, permissions, and isolation are deferred to a possible multi-user version 3.
 
-## Workspace handling
+## Operation flow
 
-One shared exec-server for all workspaces. CodeHands validates that every
-requested file path falls within an approved workspace (from config) BEFORE
-forwarding to exec-server. Config lives at `~/.codehands/config.json`.
+1. The client invokes a CodeHands MCP tool.
+2. CodeHands validates the request and resolves paths or command launch details.
+3. CodeHands applies workspace and command policy.
+4. For routine operations, the Codex adapter invokes the corresponding exec-server JSON-RPC operation. For `fs_applyPatch`, CodeHands launches the native helper through Codex process primitives after resolving the active workspace.
+5. Codex exec-server or the Codex-linked patch helper performs the local operation.
+6. CodeHands returns the authoritative structured result and backward-compatible JSON text; `view_image` additionally returns MCP image content and `request_user_input` may issue a nested MCP elicitation request.
 
-## Execution lifecycle (single tool call)
+## Upstream boundary
 
-1. The web AI calls an MCP tool (e.g. `fs/readFile` with path `src/app.ts`).
-2. CodeHands resolves the full path and checks it against approved workspaces.
-3. CodeHands checks the blocked commands list (for process operations).
-4. The codex adapter forwards the JSON-RPC call to exec-server.
-5. Exec-server executes the operation (reads file, runs command, etc.).
-6. The result returns through the adapter → CodeHands → back to the web AI.
-
-Each operation is independent. The web AI decides the next step based on what
-it received. This server does not chain operations or make coding decisions.
-
-## Error recovery
-
-CodeHands spawns exec-server as a child process. They share a fate:
-- If anything crashes, restart everything (`codehands start` again).
-- If exec-server dies mid-session, CodeHands auto-restarts it (up to 3 times)
-  and notifies connected AI clients.
-- Running processes are lost on crash — the AI simply restarts them.
-
-## Safety model
-
-- **Workspace validation:** Only paths within approved folders (from config) are
-  forwarded. All other paths are rejected at the CodeHands layer.
-- **Blocked commands:** A configurable list of dangerous commands (rm -rf /,
-  format C:, etc.) is rejected before reaching exec-server.
-- **Exec-server sandbox:** Codex's built-in sandboxing handles execution-level
-  safety.
-- **No API key:** exec-server is purely local. No cloud calls, no credentials.
-- **Auth (v2):** Required for hosted mode. Not needed for local.
-- **Rate limiting (v2):** Future addition for hosted mode.
+`vendor/codex/` must not be modified. CodeHands primarily follows Codex exec-server contracts and adapts them at the public MCP boundary, such as exposing directly reusable continuation positions or homogeneous one-to-eight request arrays. The patch helper is built outside `vendor/codex/`, uses a pinned lockfile, and links the maintained `codex-apply-patch` crate rather than copying its parser or invoking Codex's hidden apply-patch dispatch path.

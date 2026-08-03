@@ -3,3 +3,5 @@ dist/
 coverage/
 .env
 .harness/
+target/
+native/codehands-apply-patch/bin/

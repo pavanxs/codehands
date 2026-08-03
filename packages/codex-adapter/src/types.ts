@@ -9,10 +9,19 @@ export interface InitializeResponse {
   sessionId: string;
 }
 
+export interface ExecEnvPolicy {
+  inherit: "core" | "all" | "none";
+  ignoreDefaultExcludes: boolean;
+  exclude: string[];
+  set: Record<string, string>;
+  includeOnly: string[];
+}
+
 export interface ExecParams {
   processId: ProcessId;
   argv: string[];
   cwd: string;
+  envPolicy?: ExecEnvPolicy;
   env?: Record<string, string>;
   tty?: boolean;
   pipeStdin?: boolean;
@@ -40,9 +49,9 @@ export interface ReadResponse {
   chunks: ProcessOutputChunk[];
   nextSeq: number;
   exited: boolean;
-  exitCode?: number;
+  exitCode?: number | null;
   closed: boolean;
-  failure?: string;
+  failure?: string | null;
   sandboxDenied?: boolean;
 }
 
@@ -78,6 +87,32 @@ export interface FsReadFileParams {
 export interface FsReadFileResponse {
   dataBase64: string;
 }
+
+export interface FsOpenParams {
+  handleId: string;
+  path: string;
+}
+
+export interface FsOpenResponse {
+  handleId: string;
+}
+
+export interface FsReadBlockParams {
+  handleId: string;
+  offset: number;
+  len: number;
+}
+
+export interface FsReadBlockResponse {
+  chunk: string; // base64-encoded
+  eof: boolean;
+}
+
+export interface FsCloseParams {
+  handleId: string;
+}
+
+export interface FsCloseResponse {}
 
 export interface FsWriteFileParams {
   path: string;
@@ -199,6 +234,9 @@ export const METHODS = {
   processSignal: "process/signal",
   processTerminate: "process/terminate",
   fsReadFile: "fs/readFile",
+  fsOpen: "fs/open",
+  fsReadBlock: "fs/readBlock",
+  fsClose: "fs/close",
   fsWriteFile: "fs/writeFile",
   fsCreateDirectory: "fs/createDirectory",
   fsReadDirectory: "fs/readDirectory",

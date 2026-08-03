@@ -17,12 +17,14 @@ describe("AuditLogger", () => {
     const logger = new AuditLogger({ logDir: TEST_DIR });
 
     logger.log({
-      timestamp: "2025-01-01T00:00:00.000Z",
+      timestamp: "2025-01-01T00:00:00.012Z",
+      startedAt: "2025-01-01T00:00:00.000Z",
       sessionId: "sess-1",
       tool: "fs_readFile",
       params: { path: "/home/user/file.txt" },
       durationMs: 12,
       success: true,
+      outcome: { results: [{ index: 0, success: true, durationMs: 12 }] },
     });
 
     await logger.close();
@@ -36,6 +38,8 @@ describe("AuditLogger", () => {
     expect(entry.tool).toBe("fs_readFile");
     expect(entry.success).toBe(true);
     expect(entry.durationMs).toBe(12);
+    expect(entry.startedAt).toBe("2025-01-01T00:00:00.000Z");
+    expect(entry.outcome.results[0]).toMatchObject({ success: true, durationMs: 12 });
   });
 
   it("does nothing when disabled", async () => {
@@ -75,6 +79,50 @@ describe("AuditLogger", () => {
     const entry = JSON.parse(content.trim());
     expect(entry.params.content).toBe("[11 chars]");
     expect(entry.params.path).toBe("/file.txt");
+  });
+
+  it("redacts patch bodies", async () => {
+    const logger = new AuditLogger({ logDir: TEST_DIR, redactContent: true });
+    logger.log({
+      timestamp: "2025-01-01T00:00:00.000Z",
+      sessionId: "sess-patch",
+      tool: "fs_applyPatch",
+      params: { cwd: ".", patch: "*** Begin Patch\n*** End Patch" },
+      durationMs: 1,
+      success: false,
+    });
+    await logger.close();
+    const files = fs.readdirSync(TEST_DIR);
+    const content = fs.readFileSync(path.join(TEST_DIR, files[0]), "utf-8");
+    const entry = JSON.parse(content.trim());
+    expect(entry.params.patch).toBe("[29 chars]");
+    expect(entry.params.cwd).toBe(".");
+  });
+
+  it("redacts nested headers, environment values, and stdin", async () => {
+    const logger = new AuditLogger({ logDir: TEST_DIR, redactContent: true });
+
+    logger.log({
+      timestamp: "2025-01-01T00:00:00.000Z",
+      sessionId: "sess-secret",
+      tool: "batch",
+      params: {
+        env: { API_TOKEN: "secret" },
+        headers: { Authorization: "Bearer secret" },
+        calls: [{ tool: "process_write", args: { input: "password" } }],
+      },
+      durationMs: 1,
+      success: true,
+    });
+
+    await logger.close();
+
+    const files = fs.readdirSync(TEST_DIR);
+    const content = fs.readFileSync(path.join(TEST_DIR, files[0]), "utf-8");
+    const entry = JSON.parse(content.trim());
+    expect(entry.params.env.API_TOKEN).toBe("[redacted]");
+    expect(entry.params.headers.Authorization).toBe("[redacted]");
+    expect(entry.params.calls[0].args.input).toBe("[8 chars]");
   });
 
   it("logs errors", async () => {

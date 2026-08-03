@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BlockedCommands, normalizeArgv } from "./blocked-commands.js";
+import { BlockedCommands } from "./blocked-commands.js";
 
 describe("BlockedCommands", () => {
   const bc = new BlockedCommands();
@@ -92,20 +92,5 @@ describe("BlockedCommands", () => {
   it("can disable defaults", () => {
     const noDefaults = new BlockedCommands({ disableDefaults: true });
     expect(noDefaults.isBlocked(["rm", "-rf", "/"]).blocked).toBe(false);
-  });
-});
-
-describe("normalizeArgv", () => {
-  it("returns command + args when args provided", () => {
-    expect(normalizeArgv("node", ["server.js"])).toEqual(["node", "server.js"]);
-  });
-
-  it("wraps single command in shell on Windows", () => {
-    const original = process.platform;
-    if (original === "win32") {
-      expect(normalizeArgv("echo hello")).toEqual(["cmd.exe", "/c", "echo hello"]);
-    } else {
-      expect(normalizeArgv("echo hello")).toEqual(["/bin/sh", "-c", "echo hello"]);
-    }
   });
 });

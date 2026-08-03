@@ -15,6 +15,12 @@ import {
   type TerminateResponse,
   type FsReadFileParams,
   type FsReadFileResponse,
+  type FsOpenParams,
+  type FsOpenResponse,
+  type FsReadBlockParams,
+  type FsReadBlockResponse,
+  type FsCloseParams,
+  type FsCloseResponse,
   type FsWriteFileParams,
   type FsWriteFileResponse,
   type FsCreateDirectoryParams,
@@ -36,22 +42,26 @@ import {
 export class CodexAdapter extends EventEmitter {
   private manager: ExecServerManager;
   private ready = false;
+  private environmentInfoPromise: Promise<EnvironmentInfo> | null = null;
 
   constructor(options: SpawnOptions = {}) {
     super();
     this.manager = new ExecServerManager(options);
 
     this.manager.on("ready", (sessionId: string) => {
+      this.environmentInfoPromise = null;
       this.ready = true;
       this.emit("ready", sessionId);
     });
 
     this.manager.on("restarting", (attempt: number, max: number) => {
+      this.environmentInfoPromise = null;
       this.ready = false;
       this.emit("restarting", attempt, max);
     });
 
     this.manager.on("failed", (err: Error) => {
+      this.environmentInfoPromise = null;
       this.ready = false;
       this.emit("failed", err);
     });
@@ -70,6 +80,7 @@ export class CodexAdapter extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    this.environmentInfoPromise = null;
     this.ready = false;
     await this.manager.stop();
   }
@@ -118,6 +129,18 @@ export class CodexAdapter extends EventEmitter {
     return this.rpc().call<FsReadFileResponse>(METHODS.fsReadFile, params);
   }
 
+  async fsOpen(params: FsOpenParams): Promise<FsOpenResponse> {
+    return this.rpc().call<FsOpenResponse>(METHODS.fsOpen, params);
+  }
+
+  async fsReadBlock(params: FsReadBlockParams): Promise<FsReadBlockResponse> {
+    return this.rpc().call<FsReadBlockResponse>(METHODS.fsReadBlock, params);
+  }
+
+  async fsClose(params: FsCloseParams): Promise<FsCloseResponse> {
+    return this.rpc().call<FsCloseResponse>(METHODS.fsClose, params);
+  }
+
   async fsWriteFile(params: FsWriteFileParams): Promise<FsWriteFileResponse> {
     return this.rpc().call<FsWriteFileResponse>(METHODS.fsWriteFile, params);
   }
@@ -155,6 +178,14 @@ export class CodexAdapter extends EventEmitter {
   // --- Environment ---
 
   async getEnvironmentInfo(): Promise<EnvironmentInfo> {
-    return this.rpc().call<EnvironmentInfo>(METHODS.environmentInfo);
+    if (!this.environmentInfoPromise) {
+      this.environmentInfoPromise = this.rpc()
+        .call<EnvironmentInfo>(METHODS.environmentInfo)
+        .catch((error) => {
+          this.environmentInfoPromise = null;
+          throw error;
+        });
+    }
+    return this.environmentInfoPromise;
   }
 }

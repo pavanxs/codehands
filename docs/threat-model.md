@@ -1,26 +1,29 @@
-# Threat model
+# Threat Model
 
-## Status: Not yet decided
+The authoritative current scope is in [`CURRENT_PLAN.md`](./CURRENT_PLAN.md). This file records only the stable trust assumptions.
 
-The specific security constraints and threat mitigations have not been finalized.
-They will be determined during implementation.
+## Deployment assumption
 
-## Known assets to protect
+The current CodeHands version is for one trusted owner and that owner's agents. It is not a general multi-user service.
 
-- Files inside workspaces
-- Git credentials, API tokens, and browser sessions
-- Audit records
+## Current safeguards
 
-## Known trust boundaries
+- Workspace paths are validated before operations are forwarded.
+- Symlink and junction escapes are rejected.
+- New paths are checked through their nearest existing parent.
+- Blocked-command policy is applied before process launch.
+- Request sizes and malformed requests are handled with bounded errors.
+- Sensitive values and file contents are kept out of audit records.
 
-1. MCP inputs from web AIs are untrusted, even when from an authenticated chat.
-2. Codex is a separate process with its own safety mechanisms.
-3. The thin layer never makes coding decisions — it only routes and validates.
+## Global access model
 
-## Undecided
+- Workspace state is global.
+- Process state is global.
+- Connected agents may access configured workspaces.
+- Connected agents may interact with CodeHands-managed processes.
 
-- Exact path validation rules
-- Whether shell access is restricted or exposed
-- Sandboxing approach
-- Relay transport security model
-- Browser automation policy
+This is an explicit current-version design decision.
+
+## Later multi-user work
+
+Identity, access restrictions, workspace isolation, process ownership, remote deployment policy, and approval workflows are deferred to a possible version 3. They must be reconsidered before CodeHands is used by untrusted users.
