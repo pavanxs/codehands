@@ -18,8 +18,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -35,5 +33,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and test
-        run: pnpm run check
+      - name: TypeScript build and unit tests
+        run: |
+          pnpm run build:typescript
+          pnpm test

@@ -14,7 +14,7 @@ jobs:
   compatibility:
     name: Comprehensive macOS compatibility
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout with Codex source
@@ -47,8 +47,20 @@ jobs:
           cargo --version
           codex --version
 
-      - name: Build once and run the complete compatibility suite
+      - name: Fast TypeScript validation
         run: |
-          pnpm run check
+          pnpm run build:typescript
+          pnpm test
+
+      - name: Build native helper once with the CI profile
+        env:
+          CODEHANDS_PATCH_HELPER_PROFILE: ci
+          CARGO_INCREMENTAL: "0"
+        run: |
+          pnpm run build:patch-helper
+          pnpm run test:patch-helper
+
+      - name: Run real Codex and MCP compatibility checks
+        run: |
           node tests/correctness-smoke.mjs
           node tests/macos-compatibility.mjs
